@@ -2,6 +2,14 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## 0.2.1 - 2026-08-14
+
+- Increase the minimum desktop tile width so real-world entity names have more room before wrapping.
+- Let entity names, states, and parent-device names wrap naturally instead of clipping or ellipsizing them.
+- Increase the size and line-height of secondary text, room summaries, navigation text, metrics, unavailable-section labels, and Home overview metadata.
+- Allow power and energy metrics to wrap within the tile footer instead of being silently cut off.
+- Let tiles grow vertically when longer names or supporting information require additional lines while keeping the compact two-column mobile layout.
+
 ## 0.2.0 - 2026-08-14
 
 - Add live registry refresh while a Roomboard view is open, using Home Assistant registry events plus a periodic fallback refresh.
