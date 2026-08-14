@@ -1,0 +1,30 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate JavaScript and repository invariants
+        run: npm run check
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: plugin
