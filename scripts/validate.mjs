@@ -2,6 +2,7 @@ import fs from "node:fs";
 
 const source = fs.readFileSync(new URL("../dist/ha-roomboard.js", import.meta.url), "utf8");
 const hacs = JSON.parse(fs.readFileSync(new URL("../hacs.json", import.meta.url), "utf8"));
+const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 const requiredSnippets = [
   'customElements.define("ll-strategy-dashboard-ha-roomboard"',
@@ -11,12 +12,24 @@ const requiredSnippets = [
   'type: "config/device_registry/list"',
   'type: "config/entity_registry/list"',
   'strategyType: "dashboard"',
+  'entity_registry_updated',
+  'device_registry_updated',
+  'area_registry_updated',
+  'unavailable_mode',
+  'assignUniqueAreaIcons',
+  'deduplicateItems',
 ];
 
 for (const snippet of requiredSnippets) {
   if (!source.includes(snippet)) {
     throw new Error(`Missing required implementation marker: ${snippet}`);
   }
+}
+
+const versionMatch = source.match(/const ROOMBOARD_VERSION = "([^"]+)"/);
+if (!versionMatch) throw new Error("Unable to read runtime version");
+if (versionMatch[1] !== pkg.version) {
+  throw new Error(`Runtime version ${versionMatch[1]} does not match package version ${pkg.version}`);
 }
 
 if (hacs.name !== "HA Roomboard") throw new Error("Unexpected HACS display name");
@@ -32,4 +45,4 @@ for (const pattern of forbiddenAssetPatterns) {
   }
 }
 
-console.log("HA Roomboard validation passed");
+console.log(`HA Roomboard ${pkg.version} validation passed`);
