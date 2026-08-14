@@ -1,0 +1,966 @@
+const ROOMBOARD_VERSION = "0.1.0";
+const STRATEGY_TYPE = "ha-roomboard";
+
+const PRIMARY_DOMAINS = new Set([
+  "light",
+  "switch",
+  "climate",
+  "fan",
+  "cover",
+  "lock",
+  "media_player",
+  "vacuum",
+  "humidifier",
+  "water_heater",
+  "alarm_control_panel",
+  "scene",
+  "input_boolean",
+  "camera",
+]);
+
+const DIRECT_TOGGLE_DOMAINS = new Set(["light", "switch", "fan", "input_boolean"]);
+
+const IMPORTANT_SENSOR_CLASSES = new Set([
+  "temperature",
+  "humidity",
+  "carbon_dioxide",
+  "illuminance",
+  "aqi",
+  "pm1",
+  "pm10",
+  "pm25",
+  "pressure",
+  "volatile_organic_compounds",
+  "volatile_organic_compounds_parts",
+]);
+
+const IMPORTANT_BINARY_CLASSES = new Set([
+  "occupancy",
+  "motion",
+  "door",
+  "window",
+  "opening",
+  "moisture",
+  "smoke",
+  "gas",
+  "safety",
+  "problem",
+]);
+
+const SECONDARY_SENSOR_CLASSES = new Set([
+  "power",
+  "energy",
+  "battery",
+  "current",
+  "voltage",
+]);
+
+const ALWAYS_EXCLUDED_DOMAINS = new Set([
+  "automation",
+  "calendar",
+  "conversation",
+  "device_tracker",
+  "event",
+  "image",
+  "notify",
+  "number",
+  "person",
+  "select",
+  "sun",
+  "text",
+  "time",
+  "timer",
+  "update",
+  "zone",
+]);
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeSet(value) {
+  return new Set(asArray(value).map((item) => String(item).trim()).filter(Boolean));
+}
+
+function normalizeKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function domainOf(entityId) {
+  return String(entityId || "").split(".", 1)[0];
+}
+
+function slugify(value) {
+  return normalizeKey(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "room";
+}
+
+function uniquePaths(areas) {
+  const used = new Set(["home"]);
+  return areas.map((area) => {
+    const base = slugify(area.name || area.area_id);
+    let path = base;
+    let n = 2;
+    while (used.has(path)) {
+      path = `${base}-${n++}`;
+    }
+    used.add(path);
+    return { ...area, path };
+  });
+}
+
+function matchesArea(area, selectors) {
+  if (!selectors.size) return false;
+  const id = normalizeKey(area.area_id);
+  const name = normalizeKey(area.name);
+  for (const selector of selectors) {
+    const key = normalizeKey(selector);
+    if (key === id || key === name) return true;
+  }
+  return false;
+}
+
+function friendlyName(registryEntry, stateObj, device) {
+  return (
+    registryEntry?.name ||
+    stateObj?.attributes?.friendly_name ||
+    registryEntry?.original_name ||
+    device?.name_by_user ||
+    device?.name ||
+    registryEntry?.entity_id ||
+    "Entity"
+  );
+}
+
+function deviceName(device) {
+  return device?.name_by_user || device?.name || "";
+}
+
+function stateDeviceClass(stateObj) {
+  return stateObj?.attributes?.device_class || "";
+}
+
+function stateUnit(stateObj) {
+  return stateObj?.attributes?.unit_of_measurement || "";
+}
+
+function isExplicitlyIncluded(entityId, includeEntities) {
+  return includeEntities.has(entityId);
+}
+
+function isCandidateEntity(entry, stateObj, includeEntities, excludeEntities) {
+  const entityId = entry.entity_id;
+  if (!entityId || excludeEntities.has(entityId)) return false;
+
+  const explicit = isExplicitlyIncluded(entityId, includeEntities);
+  if (explicit) return true;
+
+  if (entry.disabled_by || entry.hidden_by) return false;
+  if (entry.entity_category === "config" || entry.entity_category === "diagnostic") return false;
+  if (!stateObj) return false;
+
+  const domain = domainOf(entityId);
+  if (PRIMARY_DOMAINS.has(domain)) return true;
+  if (ALWAYS_EXCLUDED_DOMAINS.has(domain)) return false;
+
+  const deviceClass = stateDeviceClass(stateObj);
+  if (domain === "sensor") return IMPORTANT_SENSOR_CLASSES.has(deviceClass);
+  if (domain === "binary_sensor") return IMPORTANT_BINARY_CLASSES.has(deviceClass);
+
+  return false;
+}
+
+function isSecondary(entry, stateObj) {
+  if (!stateObj || domainOf(entry.entity_id) !== "sensor") return false;
+  const deviceClass = stateDeviceClass(stateObj);
+  if (SECONDARY_SENSOR_CLASSES.has(deviceClass)) return true;
+  const unit = stateUnit(stateObj);
+  return unit === "W" || unit === "kW" || unit === "kWh" || unit === "%";
+}
+
+function categoryRank(item) {
+  const domain = domainOf(item.entity_id);
+  const ranks = {
+    light: 10,
+    switch: 20,
+    climate: 30,
+    fan: 40,
+    cover: 50,
+    lock: 60,
+    humidifier: 70,
+    water_heater: 80,
+    media_player: 90,
+    vacuum: 100,
+    camera: 110,
+    alarm_control_panel: 120,
+    scene: 130,
+    input_boolean: 140,
+    binary_sensor: 200,
+    sensor: 210,
+    button: 300,
+  };
+  return ranks[domain] ?? 500;
+}
+
+function buildRoom(area, devices, entities, hass, options) {
+  const areaDeviceIds = new Set(
+    devices.filter((device) => device.area_id === area.area_id).map((device) => device.id),
+  );
+  const deviceMap = new Map(devices.map((device) => [device.id, device]));
+
+  const roomEntries = entities.filter((entry) => {
+    const inherited = !entry.area_id && entry.device_id && areaDeviceIds.has(entry.device_id);
+    return entry.area_id === area.area_id || inherited;
+  });
+
+  const secondaryByDevice = new Map();
+  for (const entry of roomEntries) {
+    const stateObj = hass.states[entry.entity_id];
+    if (!entry.device_id || !isSecondary(entry, stateObj)) continue;
+    if (entry.disabled_by || entry.hidden_by || entry.entity_category === "config") continue;
+    const list = secondaryByDevice.get(entry.device_id) || [];
+    list.push({
+      entity_id: entry.entity_id,
+      name: friendlyName(entry, stateObj, deviceMap.get(entry.device_id)),
+      device_class: stateDeviceClass(stateObj),
+    });
+    secondaryByDevice.set(entry.device_id, list);
+  }
+
+  const items = [];
+  for (const entry of roomEntries) {
+    const stateObj = hass.states[entry.entity_id];
+    if (!isCandidateEntity(entry, stateObj, options.includeEntities, options.excludeEntities)) continue;
+
+    const device = deviceMap.get(entry.device_id);
+    items.push({
+      entity_id: entry.entity_id,
+      name: friendlyName(entry, stateObj, device),
+      device_name: deviceName(device),
+      domain: domainOf(entry.entity_id),
+      device_class: stateDeviceClass(stateObj),
+      explicit: isExplicitlyIncluded(entry.entity_id, options.includeEntities),
+      secondary: (secondaryByDevice.get(entry.device_id) || [])
+        .filter((secondary) => secondary.entity_id !== entry.entity_id)
+        .slice(0, 3),
+    });
+  }
+
+  for (const entityId of options.includeEntities) {
+    if (items.some((item) => item.entity_id === entityId)) continue;
+    const entry = entities.find((candidate) => candidate.entity_id === entityId);
+    if (!entry) continue;
+    const inherited = !entry.area_id && entry.device_id && areaDeviceIds.has(entry.device_id);
+    if (entry.area_id !== area.area_id && !inherited) continue;
+    const stateObj = hass.states[entityId];
+    const device = deviceMap.get(entry.device_id);
+    items.push({
+      entity_id: entityId,
+      name: friendlyName(entry, stateObj, device),
+      device_name: deviceName(device),
+      domain: domainOf(entityId),
+      device_class: stateDeviceClass(stateObj),
+      explicit: true,
+      secondary: (secondaryByDevice.get(entry.device_id) || []).slice(0, 3),
+    });
+  }
+
+  items.sort((a, b) => categoryRank(a) - categoryRank(b) || a.name.localeCompare(b.name));
+
+  const summary = {
+    temperature: items.find((item) => item.device_class === "temperature")?.entity_id,
+    humidity: items.find((item) => item.device_class === "humidity")?.entity_id,
+    carbon_dioxide: items.find((item) => item.device_class === "carbon_dioxide")?.entity_id,
+    occupancy: items.find(
+      (item) => item.device_class === "occupancy" || item.device_class === "motion",
+    )?.entity_id,
+  };
+
+  return {
+    area_id: area.area_id,
+    title: area.name,
+    icon: area.icon || "mdi:home-outline",
+    path: area.path,
+    items,
+    summary,
+  };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function displayState(hass, entityId) {
+  const stateObj = hass?.states?.[entityId];
+  if (!stateObj) return "Unavailable";
+  const unit = stateUnit(stateObj);
+  const value = stateObj.state;
+  return unit ? `${value} ${unit}` : value.replaceAll("_", " ");
+}
+
+function isActiveState(stateObj) {
+  if (!stateObj) return false;
+  return ["on", "open", "opening", "home", "playing", "heat", "cool", "dry", "fan_only"].includes(
+    stateObj.state,
+  );
+}
+
+function entityIcon(stateObj, fallbackDomain) {
+  if (stateObj?.attributes?.icon) return stateObj.attributes.icon;
+  const iconByDomain = {
+    light: "mdi:lightbulb-outline",
+    switch: "mdi:toggle-switch-outline",
+    climate: "mdi:thermostat",
+    fan: "mdi:fan",
+    cover: "mdi:window-shutter",
+    lock: "mdi:lock-outline",
+    media_player: "mdi:speaker",
+    vacuum: "mdi:robot-vacuum",
+    humidifier: "mdi:air-humidifier",
+    water_heater: "mdi:water-boiler",
+    alarm_control_panel: "mdi:shield-home-outline",
+    scene: "mdi:palette-outline",
+    input_boolean: "mdi:toggle-switch-outline",
+    camera: "mdi:cctv",
+    sensor: "mdi:gauge",
+    binary_sensor: "mdi:radiobox-marked",
+    button: "mdi:gesture-tap-button",
+  };
+  return iconByDomain[fallbackDomain] || "mdi:circle-outline";
+}
+
+function dashboardBasePath() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  if (parts.length <= 1) return window.location.pathname.replace(/\/$/, "");
+  parts.pop();
+  return `/${parts.join("/")}`;
+}
+
+class HaRoomboardDashboardStrategy extends HTMLElement {
+  static noEditor = true;
+
+  static getCreateSuggestions(_hass) {
+    return {
+      title: "Rooms",
+      icon: "mdi:floor-plan",
+    };
+  }
+
+  static async generate(config, hass) {
+    const [rawAreas, devices, entities] = await Promise.all([
+      hass.callWS({ type: "config/area_registry/list" }),
+      hass.callWS({ type: "config/device_registry/list" }),
+      hass.callWS({ type: "config/entity_registry/list" }),
+    ]);
+
+    const includeAreas = normalizeSet(config.include_areas);
+    const excludeAreas = normalizeSet(config.exclude_areas);
+    const includeEntities = normalizeSet(config.include_entities);
+    const excludeEntities = normalizeSet(config.exclude_entities);
+    const roomOrder = asArray(config.room_order).map(normalizeKey);
+
+    let areas = rawAreas.filter((area) => {
+      if (includeAreas.size && !matchesArea(area, includeAreas)) return false;
+      return !matchesArea(area, excludeAreas);
+    });
+
+    areas.sort((a, b) => {
+      const aKeys = [normalizeKey(a.area_id), normalizeKey(a.name)];
+      const bKeys = [normalizeKey(b.area_id), normalizeKey(b.name)];
+      const ai = roomOrder.findIndex((key) => aKeys.includes(key));
+      const bi = roomOrder.findIndex((key) => bKeys.includes(key));
+      if (ai !== -1 || bi !== -1) {
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        if (ai !== bi) return ai - bi;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    areas = uniquePaths(areas);
+
+    const options = { includeEntities, excludeEntities };
+    const rooms = areas
+      .map((area) => buildRoom(area, devices, entities, hass, options))
+      .filter((room) => room.items.length > 0 || config.show_empty_areas === true);
+
+    const nav = [
+      { title: "Home", path: "home", icon: "mdi:home-outline" },
+      ...rooms.map((room) => ({ title: room.title, path: room.path, icon: room.icon })),
+    ];
+
+    const views = [
+      {
+        title: "Home",
+        path: "home",
+        icon: "mdi:home-outline",
+        panel: true,
+        cards: [
+          {
+            type: "custom:ha-roomboard-overview",
+            title: config.title || hass.config.location_name || "Home",
+            rooms,
+            nav,
+          },
+        ],
+      },
+      ...rooms.map((room) => ({
+        title: room.title,
+        path: room.path,
+        icon: room.icon,
+        panel: true,
+        cards: [
+          {
+            type: "custom:ha-roomboard-room",
+            room,
+            nav,
+            show_unavailable: config.show_unavailable !== false,
+          },
+        ],
+      })),
+    ];
+
+    return {
+      title: config.title || "HA Roomboard",
+      views,
+    };
+  }
+}
+
+class RoomboardBaseCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass = undefined;
+    this._config = undefined;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this.render();
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  getCardSize() {
+    return 10;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: "auto" };
+  }
+
+  navHtml(nav, currentPath) {
+    const base = dashboardBasePath();
+    return `
+      <nav class="nav" aria-label="Rooms">
+        <div class="nav-scroll">
+          ${nav
+            .map(
+              (item) => `
+                <a class="nav-item ${item.path === currentPath ? "selected" : ""}"
+                   href="${escapeHtml(`${base}/${item.path}`)}">
+                  <ha-icon icon="${escapeHtml(item.icon || "mdi:door")}"></ha-icon>
+                  <span>${escapeHtml(item.title)}</span>
+                </a>`,
+            )
+            .join("")}
+        </div>
+      </nav>`;
+  }
+
+  baseStyles() {
+    return `
+      :host {
+        display: block;
+        min-height: 100%;
+        color: var(--primary-text-color);
+        background: var(--primary-background-color);
+        box-sizing: border-box;
+      }
+      * { box-sizing: border-box; }
+      .shell {
+        min-height: 100vh;
+        padding: 12px 16px 28px;
+        background:
+          radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--primary-color) 8%, transparent), transparent 32rem),
+          var(--primary-background-color);
+      }
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin: -4px -4px 18px;
+        padding: 8px 4px;
+        background: color-mix(in srgb, var(--primary-background-color) 90%, transparent);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+      .nav-scroll {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding: 2px;
+      }
+      .nav-scroll::-webkit-scrollbar { display: none; }
+      .nav-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        flex: 0 0 auto;
+        min-height: 42px;
+        padding: 0 14px;
+        border-radius: 14px;
+        color: var(--secondary-text-color);
+        background: var(--card-background-color);
+        border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+        text-decoration: none;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+      .nav-item.selected {
+        color: var(--primary-text-color);
+        border-color: color-mix(in srgb, var(--primary-color) 42%, var(--divider-color));
+        background: color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
+      }
+      .nav-item ha-icon { --mdc-icon-size: 19px; }
+      .header {
+        max-width: 1280px;
+        margin: 0 auto 18px;
+      }
+      .eyebrow {
+        color: var(--secondary-text-color);
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        letter-spacing: 0.09em;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 6px 0 8px;
+        font-size: clamp(1.7rem, 4vw, 2.6rem);
+        line-height: 1.05;
+      }
+      .summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: var(--secondary-text-color);
+      }
+      .summary-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--card-background-color) 88%, transparent);
+        border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+        font-size: 0.82rem;
+      }
+      @media (max-width: 600px) {
+        .shell { padding: 8px 10px 22px; }
+        .nav { margin-bottom: 14px; }
+        .nav-item { min-height: 40px; padding: 0 12px; }
+        .nav-item span { font-size: 0.82rem; }
+      }
+    `;
+  }
+
+  showMoreInfo(entityId) {
+    this.dispatchEvent(
+      new CustomEvent("hass-more-info", {
+        bubbles: true,
+        composed: true,
+        detail: { entityId },
+      }),
+    );
+  }
+}
+
+class HaRoomboardRoomCard extends RoomboardBaseCard {
+  setConfig(config) {
+    if (!config?.room || !Array.isArray(config.nav)) {
+      throw new Error("HA Roomboard room card requires room and nav configuration");
+    }
+    this._config = config;
+    this.render();
+  }
+
+  async activate(entityId) {
+    const hass = this._hass;
+    const stateObj = hass?.states?.[entityId];
+    if (!hass || !stateObj) return;
+
+    const domain = domainOf(entityId);
+    try {
+      if (DIRECT_TOGGLE_DOMAINS.has(domain)) {
+        await hass.callService(domain, "toggle", { entity_id: entityId });
+        return;
+      }
+      if (domain === "scene") {
+        await hass.callService("scene", "turn_on", { entity_id: entityId });
+        return;
+      }
+      if (domain === "button") {
+        await hass.callService("button", "press", { entity_id: entityId });
+        return;
+      }
+      this.showMoreInfo(entityId);
+    } catch (error) {
+      console.error("HA Roomboard action failed", entityId, error);
+      this.showMoreInfo(entityId);
+    }
+  }
+
+  summaryHtml(room) {
+    if (!this._hass) return "";
+    const entries = [
+      ["temperature", "Temperature"],
+      ["humidity", "Humidity"],
+      ["carbon_dioxide", "CO₂"],
+      ["occupancy", "Presence"],
+    ];
+    return entries
+      .filter(([key]) => room.summary?.[key])
+      .map(
+        ([key, label]) =>
+          `<span class="summary-chip"><strong>${escapeHtml(label)}:</strong>&nbsp;${escapeHtml(
+            displayState(this._hass, room.summary[key]),
+          )}</span>`,
+      )
+      .join("");
+  }
+
+  tileHtml(item) {
+    const stateObj = this._hass?.states?.[item.entity_id];
+    if (!stateObj && this._config.show_unavailable === false) return "";
+
+    const active = isActiveState(stateObj);
+    const unavailable = !stateObj || stateObj.state === "unavailable" || stateObj.state === "unknown";
+    const icon = entityIcon(stateObj, item.domain);
+    const secondary = asArray(item.secondary)
+      .map((metric) => {
+        const metricState = this._hass?.states?.[metric.entity_id];
+        if (!metricState || metricState.state === "unavailable") return "";
+        return `<span>${escapeHtml(displayState(this._hass, metric.entity_id))}</span>`;
+      })
+      .filter(Boolean)
+      .join("");
+
+    return `
+      <article class="tile ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" data-entity="${escapeHtml(
+        item.entity_id,
+      )}">
+        <button class="tile-main" type="button" data-action="activate" data-entity="${escapeHtml(item.entity_id)}">
+          <span class="icon-wrap"><ha-icon icon="${escapeHtml(icon)}"></ha-icon></span>
+          <span class="tile-copy">
+            <span class="tile-name">${escapeHtml(item.name)}</span>
+            <span class="tile-state">${escapeHtml(displayState(this._hass, item.entity_id))}</span>
+            ${item.device_name && item.device_name !== item.name ? `<span class="device-name">${escapeHtml(item.device_name)}</span>` : ""}
+          </span>
+        </button>
+        <div class="tile-footer">
+          <div class="metrics">${secondary}</div>
+          <button class="more" type="button" aria-label="More information" data-action="more" data-entity="${escapeHtml(
+            item.entity_id,
+          )}">•••</button>
+        </div>
+      </article>`;
+  }
+
+  bindEvents() {
+    this.shadowRoot.querySelectorAll("button[data-entity]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const target = event.currentTarget;
+        const entityId = target.dataset.entity;
+        if (target.dataset.action === "more") this.showMoreInfo(entityId);
+        else this.activate(entityId);
+      });
+    });
+  }
+
+  render() {
+    if (!this.shadowRoot || !this._config || !this._hass) return;
+    const room = this._config.room;
+    const tiles = room.items.map((item) => this.tileHtml(item)).join("");
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${this.baseStyles()}
+        .grid {
+          max-width: 1280px;
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+          gap: 12px;
+          align-items: stretch;
+        }
+        .tile {
+          min-height: 154px;
+          border-radius: 20px;
+          background: var(--card-background-color);
+          border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+          box-shadow: 0 6px 20px color-mix(in srgb, #000 7%, transparent);
+          overflow: hidden;
+          transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+        }
+        .tile:hover { transform: translateY(-1px); }
+        .tile.active {
+          border-color: color-mix(in srgb, var(--primary-color) 52%, var(--divider-color));
+          background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+        }
+        .tile.unavailable { opacity: 0.58; }
+        .tile-main {
+          width: 100%;
+          min-height: 116px;
+          display: grid;
+          grid-template-columns: 44px 1fr;
+          gap: 12px;
+          align-items: start;
+          padding: 18px 16px 10px;
+          border: 0;
+          color: inherit;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+          font: inherit;
+        }
+        .icon-wrap {
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: color-mix(in srgb, var(--primary-text-color) 7%, transparent);
+        }
+        .active .icon-wrap {
+          color: var(--primary-color);
+          background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+        }
+        .icon-wrap ha-icon { --mdc-icon-size: 24px; }
+        .tile-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+        .tile-name {
+          font-size: 0.96rem;
+          font-weight: 700;
+          line-height: 1.2;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tile-state {
+          color: var(--secondary-text-color);
+          font-size: 0.86rem;
+          text-transform: capitalize;
+        }
+        .device-name {
+          color: var(--secondary-text-color);
+          font-size: 0.72rem;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .tile-footer {
+          min-height: 38px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          padding: 5px 9px 9px 16px;
+        }
+        .metrics {
+          min-width: 0;
+          display: flex;
+          gap: 8px;
+          color: var(--secondary-text-color);
+          font-size: 0.72rem;
+          white-space: nowrap;
+          overflow: hidden;
+        }
+        .more {
+          width: 34px;
+          height: 28px;
+          flex: 0 0 auto;
+          border: 0;
+          border-radius: 10px;
+          color: var(--secondary-text-color);
+          background: transparent;
+          cursor: pointer;
+          font-weight: 700;
+          letter-spacing: 1px;
+        }
+        .more:hover { background: color-mix(in srgb, var(--primary-text-color) 7%, transparent); }
+        .empty {
+          max-width: 1280px;
+          margin: 0 auto;
+          padding: 22px;
+          border-radius: 18px;
+          background: var(--card-background-color);
+          color: var(--secondary-text-color);
+        }
+        @media (max-width: 600px) {
+          .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+          .tile { min-height: 146px; border-radius: 18px; }
+          .tile-main { grid-template-columns: 40px 1fr; gap: 9px; padding: 14px 11px 7px; }
+          .icon-wrap { width: 40px; height: 40px; border-radius: 13px; }
+          .tile-footer { padding-left: 11px; }
+          .metrics span:nth-child(n+2) { display: none; }
+        }
+      </style>
+      <div class="shell">
+        ${this.navHtml(this._config.nav, room.path)}
+        <header class="header">
+          <div class="eyebrow">Room</div>
+          <h1>${escapeHtml(room.title)}</h1>
+          <div class="summary">${this.summaryHtml(room)}</div>
+        </header>
+        ${tiles ? `<main class="grid">${tiles}</main>` : `<div class="empty">No everyday entities were selected automatically for this area.</div>`}
+      </div>`;
+    this.bindEvents();
+  }
+}
+
+class HaRoomboardOverviewCard extends RoomboardBaseCard {
+  setConfig(config) {
+    if (!Array.isArray(config?.rooms) || !Array.isArray(config.nav)) {
+      throw new Error("HA Roomboard overview card requires rooms and nav configuration");
+    }
+    this._config = config;
+    this.render();
+  }
+
+  roomSummary(room) {
+    const values = [];
+    if (room.summary?.temperature) values.push(displayState(this._hass, room.summary.temperature));
+    if (room.summary?.humidity) values.push(displayState(this._hass, room.summary.humidity));
+    if (room.summary?.occupancy) values.push(displayState(this._hass, room.summary.occupancy));
+    return values.join(" · ");
+  }
+
+  render() {
+    if (!this.shadowRoot || !this._config || !this._hass) return;
+    const base = dashboardBasePath();
+    const roomCards = this._config.rooms
+      .map(
+        (room) => `
+          <a class="room-card" href="${escapeHtml(`${base}/${room.path}`)}">
+            <span class="room-icon"><ha-icon icon="${escapeHtml(room.icon || "mdi:home-outline")}"></ha-icon></span>
+            <span class="room-copy">
+              <strong>${escapeHtml(room.title)}</strong>
+              <span>${escapeHtml(this.roomSummary(room) || `${room.items.length} items`)}</span>
+            </span>
+            <span class="count">${room.items.length}</span>
+          </a>`,
+      )
+      .join("");
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${this.baseStyles()}
+        .overview-grid {
+          max-width: 1280px;
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+          gap: 12px;
+        }
+        .room-card {
+          min-height: 112px;
+          display: grid;
+          grid-template-columns: 48px 1fr auto;
+          gap: 13px;
+          align-items: center;
+          padding: 16px;
+          border-radius: 20px;
+          color: var(--primary-text-color);
+          background: var(--card-background-color);
+          border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+          text-decoration: none;
+          box-shadow: 0 6px 20px color-mix(in srgb, #000 7%, transparent);
+        }
+        .room-card:hover { border-color: color-mix(in srgb, var(--primary-color) 42%, var(--divider-color)); }
+        .room-icon {
+          width: 48px;
+          height: 48px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 15px;
+          color: var(--primary-color);
+          background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+        }
+        .room-copy { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+        .room-copy strong { font-size: 1rem; }
+        .room-copy span { color: var(--secondary-text-color); font-size: 0.8rem; text-transform: capitalize; }
+        .count {
+          min-width: 30px;
+          height: 30px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 8px;
+          border-radius: 999px;
+          color: var(--secondary-text-color);
+          background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
+          font-size: 0.76rem;
+          font-weight: 700;
+        }
+        @media (max-width: 600px) {
+          .overview-grid { grid-template-columns: 1fr; gap: 9px; }
+          .room-card { min-height: 96px; border-radius: 18px; }
+        }
+      </style>
+      <div class="shell">
+        ${this.navHtml(this._config.nav, "home")}
+        <header class="header">
+          <div class="eyebrow">HA Roomboard</div>
+          <h1>${escapeHtml(this._config.title || "Home")}</h1>
+          <div class="summary"><span class="summary-chip">${this._config.rooms.length} rooms</span></div>
+        </header>
+        <main class="overview-grid">${roomCards}</main>
+      </div>`;
+  }
+}
+
+if (!customElements.get("ll-strategy-dashboard-ha-roomboard")) {
+  customElements.define("ll-strategy-dashboard-ha-roomboard", HaRoomboardDashboardStrategy);
+}
+if (!customElements.get("ha-roomboard-room")) {
+  customElements.define("ha-roomboard-room", HaRoomboardRoomCard);
+}
+if (!customElements.get("ha-roomboard-overview")) {
+  customElements.define("ha-roomboard-overview", HaRoomboardOverviewCard);
+}
+
+window.customStrategies = window.customStrategies || [];
+if (!window.customStrategies.some((strategy) => strategy.type === STRATEGY_TYPE)) {
+  window.customStrategies.push({
+    type: STRATEGY_TYPE,
+    strategyType: "dashboard",
+    name: "HA Roomboard",
+    description: "An automatic room-first dashboard generated from Home Assistant areas and entities.",
+    documentationURL: "https://github.com/ArrowSK/ha-roomboard",
+  });
+}
+
+window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "ha-roomboard-room")) {
+  window.customCards.push({
+    type: "ha-roomboard-room",
+    name: "HA Roomboard Room",
+    description: "Room view used by the HA Roomboard dashboard strategy.",
+    preview: false,
+    documentationURL: "https://github.com/ArrowSK/ha-roomboard",
+  });
+}
+
+console.info(`%c HA Roomboard %c v${ROOMBOARD_VERSION} `, "background:#455a64;color:white;font-weight:700", "background:#eceff1;color:#263238");
