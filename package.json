@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check dist/ha-roomboard.js && node scripts/validate.mjs"
+    "check": "node --check dist/ha-roomboard.js && node scripts/validate.mjs && node scripts/behavior.test.mjs"
   }
 }
