@@ -1,4 +1,4 @@
-const ROOMBOARD_VERSION = "0.2.0";
+const ROOMBOARD_VERSION = "0.2.1";
 const STRATEGY_TYPE = "ha-roomboard";
 const DEFAULT_REFRESH_SECONDS = 60;
 
@@ -713,7 +713,7 @@ class RoomboardBaseCard extends HTMLElement {
         background: var(--card-background-color);
         border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
         text-decoration: none;
-        font-size: 0.9rem;
+        font-size: 0.94rem;
         font-weight: 600;
       }
       .nav-item.selected {
@@ -723,13 +723,13 @@ class RoomboardBaseCard extends HTMLElement {
       }
       .nav-item ha-icon { --mdc-icon-size: 19px; }
       .header {
-        max-width: 1280px;
+        max-width: 1440px;
         margin: 0 auto 18px;
       }
       .eyebrow {
         color: var(--secondary-text-color);
         text-transform: uppercase;
-        font-size: 0.72rem;
+        font-size: 0.76rem;
         letter-spacing: 0.09em;
         font-weight: 700;
       }
@@ -747,18 +747,19 @@ class RoomboardBaseCard extends HTMLElement {
       .summary-chip {
         display: inline-flex;
         align-items: center;
-        min-height: 30px;
-        padding: 0 10px;
+        min-height: 32px;
+        padding: 0 11px;
         border-radius: 999px;
         background: color-mix(in srgb, var(--card-background-color) 88%, transparent);
         border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
-        font-size: 0.82rem;
+        font-size: 0.88rem;
+        line-height: 1.25;
       }
       @media (max-width: 600px) {
         .shell { padding: 8px 10px 22px; }
         .nav { margin-bottom: 14px; }
         .nav-item { min-height: 40px; padding: 0 12px; }
-        .nav-item span { font-size: 0.82rem; }
+        .nav-item span { font-size: 0.88rem; }
       }
     `;
   }
@@ -924,15 +925,15 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
       <style>
         ${this.baseStyles()}
         .grid {
-          max-width: 1280px;
+          max-width: 1440px;
           margin: 0 auto;
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
           gap: 12px;
           align-items: stretch;
         }
         .tile {
-          min-height: 154px;
+          min-height: 184px;
           border-radius: 20px;
           background: var(--card-background-color);
           border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
@@ -948,12 +949,12 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         .tile.unavailable { opacity: 0.52; }
         .tile-main {
           width: 100%;
-          min-height: 116px;
+          min-height: 136px;
           display: grid;
-          grid-template-columns: 44px 1fr;
+          grid-template-columns: 46px minmax(0, 1fr);
           gap: 12px;
           align-items: start;
-          padding: 18px 16px 10px;
+          padding: 18px 16px 12px;
           border: 0;
           color: inherit;
           background: transparent;
@@ -962,8 +963,8 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           font: inherit;
         }
         .icon-wrap {
-          width: 44px;
-          height: 44px;
+          width: 46px;
+          height: 46px;
           border-radius: 14px;
           display: inline-flex;
           align-items: center;
@@ -974,59 +975,78 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           color: var(--primary-color);
           background: color-mix(in srgb, var(--primary-color) 16%, transparent);
         }
-        .icon-wrap ha-icon { --mdc-icon-size: 24px; }
-        .tile-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+        .icon-wrap ha-icon { --mdc-icon-size: 25px; }
+        .tile-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+        }
         .tile-name {
-          font-size: 0.96rem;
+          display: block;
+          font-size: 1rem;
           font-weight: 700;
-          line-height: 1.2;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          line-height: 1.28;
+          overflow-wrap: anywhere;
+          word-break: normal;
+          hyphens: auto;
         }
         .tile-state {
+          display: block;
           color: var(--secondary-text-color);
-          font-size: 0.86rem;
+          font-size: 0.9rem;
+          line-height: 1.3;
+          font-weight: 500;
           text-transform: capitalize;
+          overflow-wrap: anywhere;
         }
         .device-name {
+          display: block;
           color: var(--secondary-text-color);
-          font-size: 0.72rem;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          font-size: 0.82rem;
+          line-height: 1.3;
+          font-weight: 500;
+          overflow-wrap: anywhere;
+          word-break: normal;
+          hyphens: auto;
         }
         .tile-footer {
-          min-height: 38px;
+          min-height: 44px;
           display: flex;
-          align-items: center;
+          align-items: flex-end;
           justify-content: space-between;
           gap: 8px;
-          padding: 5px 9px 9px 16px;
+          padding: 5px 9px 10px 16px;
         }
         .metrics {
           min-width: 0;
           display: flex;
-          gap: 8px;
+          flex-wrap: wrap;
+          gap: 5px 9px;
           color: var(--secondary-text-color);
-          font-size: 0.72rem;
-          white-space: nowrap;
-          overflow: hidden;
+          font-size: 0.8rem;
+          line-height: 1.25;
+          font-weight: 500;
+          white-space: normal;
+          overflow: visible;
         }
+        .metrics span { white-space: nowrap; }
         .more {
-          width: 34px;
-          height: 28px;
+          width: 36px;
+          height: 32px;
           flex: 0 0 auto;
           border: 0;
           border-radius: 10px;
           color: var(--secondary-text-color);
           background: transparent;
           cursor: pointer;
+          font-size: 0.9rem;
           font-weight: 700;
           letter-spacing: 1px;
         }
         .more:hover { background: color-mix(in srgb, var(--primary-text-color) 7%, transparent); }
         .empty {
-          max-width: 1280px;
+          max-width: 1440px;
           margin: 0 auto;
           padding: 22px;
           border-radius: 18px;
@@ -1035,7 +1055,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         }
         .section-divider,
         .unavailable-section {
-          max-width: 1280px;
+          max-width: 1440px;
           margin: 24px auto 12px;
         }
         .section-divider {
@@ -1044,7 +1064,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           justify-content: space-between;
           gap: 12px;
           color: var(--secondary-text-color);
-          font-size: 0.78rem;
+          font-size: 0.84rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.07em;
@@ -1062,14 +1082,14 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           padding-top: 10px;
         }
         .unavailable-section summary {
-          min-height: 42px;
+          min-height: 44px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 12px;
           cursor: pointer;
           color: var(--secondary-text-color);
-          font-size: 0.84rem;
+          font-size: 0.9rem;
           font-weight: 700;
           list-style: none;
         }
@@ -1077,10 +1097,20 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         .unavailable-grid { margin-top: 10px; }
         @media (max-width: 600px) {
           .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-          .tile { min-height: 146px; border-radius: 18px; }
-          .tile-main { grid-template-columns: 40px 1fr; gap: 9px; padding: 14px 11px 7px; }
+          .tile { min-height: 174px; border-radius: 18px; }
+          .tile-main {
+            min-height: 126px;
+            grid-template-columns: 40px minmax(0, 1fr);
+            gap: 9px;
+            padding: 14px 11px 9px;
+          }
           .icon-wrap { width: 40px; height: 40px; border-radius: 13px; }
-          .tile-footer { padding-left: 11px; }
+          .icon-wrap ha-icon { --mdc-icon-size: 23px; }
+          .tile-name { font-size: 0.96rem; line-height: 1.25; }
+          .tile-state { font-size: 0.86rem; }
+          .device-name { font-size: 0.78rem; }
+          .tile-footer { min-height: 42px; padding-left: 11px; }
+          .metrics { font-size: 0.76rem; gap: 4px 7px; }
           .metrics span:nth-child(n+2) { display: none; }
         }
       </style>
@@ -1150,16 +1180,16 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
       <style>
         ${this.baseStyles()}
         .overview-grid {
-          max-width: 1280px;
+          max-width: 1440px;
           margin: 0 auto;
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
           gap: 12px;
         }
         .room-card {
           min-height: 112px;
           display: grid;
-          grid-template-columns: 48px 1fr auto;
+          grid-template-columns: 48px minmax(0, 1fr) auto;
           gap: 13px;
           align-items: center;
           padding: 16px;
@@ -1181,12 +1211,24 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           color: var(--primary-color);
           background: color-mix(in srgb, var(--primary-color) 12%, transparent);
         }
-        .room-copy { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-        .room-copy strong { font-size: 1rem; }
-        .room-copy span { color: var(--secondary-text-color); font-size: 0.8rem; text-transform: capitalize; }
+        .room-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          overflow-wrap: anywhere;
+        }
+        .room-copy strong { font-size: 1.02rem; line-height: 1.25; }
+        .room-copy span {
+          color: var(--secondary-text-color);
+          font-size: 0.88rem;
+          line-height: 1.3;
+          font-weight: 500;
+          text-transform: capitalize;
+        }
         .count {
-          min-width: 30px;
-          height: 30px;
+          min-width: 32px;
+          height: 32px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -1194,12 +1236,12 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           border-radius: 999px;
           color: var(--secondary-text-color);
           background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
-          font-size: 0.76rem;
+          font-size: 0.82rem;
           font-weight: 700;
         }
         @media (max-width: 600px) {
           .overview-grid { grid-template-columns: 1fr; gap: 9px; }
-          .room-card { min-height: 96px; border-radius: 18px; }
+          .room-card { min-height: 100px; border-radius: 18px; }
         }
       </style>
       <div class="shell">
