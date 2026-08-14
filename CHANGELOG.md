@@ -2,6 +2,12 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## 0.1.1 - 2026-08-14
+
+- Use Home Assistant's current `type: panel` view configuration for generated full-width room views.
+- Keep card grid metadata numeric and compatible with the current dashboard grid API.
+- Align package and runtime version metadata.
+
 ## 0.1.0 - 2026-08-14
 
 Initial public implementation.
