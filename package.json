@@ -1,9 +1,9 @@
 {
   "name": "ha-roomboard",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check dist/ha-roomboard.js && node scripts/validate.mjs"
+    "check": "node --check dist/ha-roomboard.js && node scripts/validate.mjs && node scripts/behavior.test.mjs"
   }
 }
