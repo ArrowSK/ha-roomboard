@@ -2,6 +2,16 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## 0.2.0 - 2026-08-14
+
+- Add live registry refresh while a Roomboard view is open, using Home Assistant registry events plus a periodic fallback refresh.
+- Newly created or migrated entities in an existing Area can appear without rebuilding the dashboard.
+- Add semantic room-icon inference across a broad set of common room types and enforce unique navigation icons within the dashboard.
+- Move unavailable and unknown entities out of the main grid; collapse them at the bottom by default with configurable `collapse`, `show`, and `hide` modes.
+- Prefer available entities when suppressing obvious same-domain, same-name duplicates; allow deduplication to be disabled.
+- Prefer available temperature, humidity, CO₂, and presence sensors in room summaries instead of displaying unavailable summary chips.
+- Show available-entity counts on the Home overview.
+
 ## 0.1.1 - 2026-08-14
 
 - Use Home Assistant's current `type: panel` view configuration for generated full-width room views.
