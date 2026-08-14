@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="HA Roomboard icon" width="160">
+</p>
+
 # HA Roomboard
 
 HA Roomboard is a frontend-only Home Assistant dashboard that builds itself from your existing Areas, devices, and entities.
@@ -86,6 +90,8 @@ Area selectors accept either the Area ID or the Area name. Entity selectors use 
 HA Roomboard is an independent Home Assistant community project. It is not a skin, fork, or redistribution of any commercial smart-home application.
 
 The project does not contain third-party application code, extracted artwork, logos, screenshots, fonts, proprietary icon sets, copied stylesheets, or decompiled resources. Its room navigation, responsive tiles, device grouping, and compact controls are independently implemented from general interface patterns and Home Assistant APIs.
+
+The HA Roomboard icon is original project artwork and is not derived from Tuya, Smart Life, or Home Assistant branding.
 
 See [docs/LEGAL.md](docs/LEGAL.md) for the contributor rules that keep this separation explicit.
 
