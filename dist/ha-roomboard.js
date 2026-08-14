@@ -1,4 +1,4 @@
-const ROOMBOARD_VERSION = "0.1.0";
+const ROOMBOARD_VERSION = "0.1.1";
 const STRATEGY_TYPE = "ha-roomboard";
 
 const PRIMARY_DOMAINS = new Set([
@@ -402,7 +402,7 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
         title: "Home",
         path: "home",
         icon: "mdi:home-outline",
-        panel: true,
+        type: "panel",
         cards: [
           {
             type: "custom:ha-roomboard-overview",
@@ -416,7 +416,7 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
         title: room.title,
         path: room.path,
         icon: room.icon,
-        panel: true,
+        type: "panel",
         cards: [
           {
             type: "custom:ha-roomboard-room",
@@ -457,7 +457,7 @@ class RoomboardBaseCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return { columns: 12, min_columns: 6, rows: "auto" };
+    return { columns: 12, min_columns: 6, rows: 6, min_rows: 3 };
   }
 
   navHtml(nav, currentPath) {
