@@ -28,3 +28,7 @@ jobs:
         uses: hacs/action@main
         with:
           category: plugin
+          # These are catalogue-presentation checks, not plugin-structure checks.
+          # Remove the ignores before applying to the default HACS catalogue,
+          # after the repository has topics/description and a real UI screenshot.
+          ignore: "topics description images"
