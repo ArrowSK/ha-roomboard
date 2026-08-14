@@ -81,8 +81,8 @@ const ROOM_ICON_RULES = [
   { terms: ["bedroom", "bed room", "master", "guest room", "nursery", "kids room", "gyerekszoba", "hálószoba"], icons: ["mdi:bed-king-outline", "mdi:bed-single-outline", "mdi:bed-double-outline"] },
   { terms: ["kitchen", "konyha", "küche"], icons: ["mdi:chef-hat", "mdi:stove"] },
   { terms: ["hall", "hallway", "corridor", "entry", "entrance", "foyer", "előszoba", "flur"], icons: ["mdi:door-open", "mdi:door"] },
-  { terms: ["living", "main room", "lounge", "family room", "salon", "nappali", "wohnzimmer"], icons: ["mdi:sofa-outline", "mdi:sofa-single-outline"] },
   { terms: ["outside", "outdoor", "garden", "yard", "patio", "terrace", "balcony", "kert", "erkély", "garten"], icons: ["mdi:tree-outline", "mdi:flower-outline", "mdi:balcony"] },
+  { terms: ["living", "main room", "lounge", "family room", "salon", "nappali", "wohnzimmer"], icons: ["mdi:sofa-outline", "mdi:sofa-single-outline"] },
   { terms: ["office", "study", "dolgozó", "büro"], icons: ["mdi:desk", "mdi:laptop"] },
   { terms: ["dining", "étkező", "esszimmer"], icons: ["mdi:table-chair", "mdi:silverware-fork-knife"] },
   { terms: ["laundry", "utility", "mosókonyha", "hauswirtschaft"], icons: ["mdi:washing-machine", "mdi:tumble-dryer"] },
@@ -518,7 +518,11 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
     const refreshSeconds = Math.max(30, Number(config.refresh_interval || DEFAULT_REFRESH_SECONDS));
     const unavailableMode = ["collapse", "show", "hide"].includes(config.unavailable_mode)
       ? config.unavailable_mode
-      : "collapse";
+      : config.show_unavailable === false
+        ? "hide"
+        : config.show_unavailable === true
+          ? "show"
+          : "collapse";
 
     const common = {
       nav,
@@ -1087,11 +1091,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           <h1>${escapeHtml(room.title)}</h1>
           <div class="summary">${this.summaryHtml(room)}</div>
         </header>
-        ${
-          availableTiles
-            ? `<main class="grid">${availableTiles}</main>`
-            : `<div class="empty">No available everyday entities are currently active in this area.</div>`
-        }
+        ${availableTiles ? `<main class="grid">${availableTiles}</main>` : `<div class="empty">No available everyday entities are currently active in this area.</div>`}
         ${unavailableSection}
       </div>`;
     this.bindEvents();
