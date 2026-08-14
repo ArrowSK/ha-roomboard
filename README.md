@@ -21,6 +21,7 @@ It is designed for the common smart-home case where Home Assistant exposes far m
 - Attaches power, energy, current, voltage, and battery readings as secondary information where possible instead of creating extra tiles.
 - Suppresses obvious duplicate tiles with the same domain and display name by preferring the available entity.
 - Keeps unavailable/unknown entities out of the main grid and places them in a collapsed section at the bottom by default.
+- Uses wider responsive tiles, readable secondary text, and wrapped names instead of clipping long entity or device names.
 - Excludes disabled, hidden, configuration, diagnostic, and administrative entities by default.
 - Allows explicit include/exclude overrides when the automatic result is not what you want.
 - Uses no third-party Lovelace card as a runtime dependency.
@@ -75,6 +76,12 @@ Other modes are available:
 ## Room icons
 
 Roomboard first tries to infer a meaningful icon from the Area name, with rules for bedrooms, bathrooms, kitchens, halls/entries, living rooms, outside/gardens/balconies, basements, offices, dining rooms, laundry/utility rooms, garages, attics, storage, workshops, gyms, stairs, media rooms, pools and other common spaces. It then falls back to a pool of neutral room icons. Icons are allocated uniquely within the generated dashboard so the top navigation does not become a row of identical houses.
+
+## Readability and long names
+
+Roomboard deliberately gives everyday tiles enough horizontal and vertical space for real-world Home Assistant names. On larger screens the room grid uses wider auto-fit columns instead of trying to fit as many cards as possible into one row. Entity names, state text, and parent-device names wrap naturally and are not shortened with an ellipsis. Secondary device text and power/energy metrics use larger type than the initial beta and metrics can wrap onto another line when necessary.
+
+On narrow screens Roomboard keeps a two-column layout, but the card height can expand when a long name needs additional lines. The goal is to preserve the compact smart-home layout without making names or supporting information unreadable.
 
 ## Optional strategy configuration
 
