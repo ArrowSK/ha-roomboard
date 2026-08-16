@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 
+class FakeCustomEvent {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.detail = options.detail;
+    this.bubbles = options.bubbles;
+    this.composed = options.composed;
+  }
+}
+
 class FakeElement {
   constructor() {
     this.isConnected = false;
+    this.events = [];
   }
 
   attachShadow() {
@@ -14,9 +24,13 @@ class FakeElement {
     return this.shadowRoot;
   }
 
-  dispatchEvent() {}
+  dispatchEvent(event) {
+    this.events.push(event);
+    return true;
+  }
 }
 
+globalThis.CustomEvent = FakeCustomEvent;
 globalThis.HTMLElement = FakeElement;
 const customElementRegistry = new Map();
 globalThis.customElements = {
@@ -32,9 +46,16 @@ globalThis.window = {
 await import("../dist/ha-roomboard.js");
 
 const Strategy = customElements.get("ll-strategy-dashboard-ha-roomboard");
+const LightStrategy = customElements.get("ll-strategy-dashboard-ha-roomboard-light");
+const DarkStrategy = customElements.get("ll-strategy-dashboard-ha-roomboard-dark");
 const RoomCard = customElements.get("ha-roomboard-room");
+const OverviewCard = customElements.get("ha-roomboard-overview");
+
 assert.ok(Strategy, "dashboard strategy must register");
+assert.ok(LightStrategy, "light dashboard strategy must register");
+assert.ok(DarkStrategy, "dark dashboard strategy must register");
 assert.ok(RoomCard, "room card must register");
+assert.ok(OverviewCard, "overview card must register");
 
 const areas = [
   { area_id: "basement", name: "Basement" },
@@ -67,6 +88,9 @@ entities = entities.concat([
   { entity_id: "light.artem_nightstand_old", device_id: "bedside_old", name: "Artem Nightstand" },
   { entity_id: "sensor.bedroom_temperature", device_id: "bedroom_climate" },
   { entity_id: "sensor.bedroom_humidity", device_id: "bedroom_climate" },
+  { entity_id: "automation.bedroom_night_mode", area_id: "bedroom", name: "Bedroom Night Mode" },
+  { entity_id: "scene.good_night", name: "Good Night" },
+  { entity_id: "automation.hall_lights", name: "Hall Lights" },
 ]);
 
 const states = Object.fromEntries(
@@ -100,8 +124,21 @@ Object.assign(states, {
       unit_of_measurement: "%",
     },
   },
+  "automation.bedroom_night_mode": {
+    state: "on",
+    attributes: { friendly_name: "Bedroom Night Mode" },
+  },
+  "scene.good_night": {
+    state: "2026-08-16T12:00:00+00:00",
+    attributes: { friendly_name: "Good Night" },
+  },
+  "automation.hall_lights": {
+    state: "on",
+    attributes: { friendly_name: "Hall Lights" },
+  },
 });
 
+const serviceCalls = [];
 const hass = {
   states,
   config: { location_name: "Test Home" },
@@ -111,7 +148,9 @@ const hass = {
     if (type === "config/entity_registry/list") return entities;
     throw new Error(`Unexpected websocket request ${type}`);
   },
-  callService: async () => {},
+  callService: async (...args) => {
+    serviceCalls.push(args);
+  },
 };
 
 const dashboard = await Strategy.generate({}, hass);
@@ -131,6 +170,25 @@ const bedroomConfig = bedroomView.cards[0];
 const bedroomEntities = bedroomConfig.room.items.map((item) => item.entity_id);
 assert.ok(bedroomEntities.includes("light.artem_nightstand"));
 assert.ok(!bedroomEntities.includes("light.artem_nightstand_old"), "available duplicate should win");
+assert.ok(
+  bedroomEntities.includes("automation.bedroom_night_mode"),
+  "area-assigned automations should appear as normal room tiles",
+);
+
+const overviewConfig = dashboard.views.find((view) => view.path === "home").cards[0];
+assert.ok(
+  overviewConfig.global_actions.some((item) => item.entity_id === "scene.good_night"),
+  "global scenes should be discovered",
+);
+assert.ok(
+  overviewConfig.global_actions.some((item) => item.entity_id === "automation.hall_lights"),
+  "global automations should be discovered",
+);
+
+const lightDashboard = await LightStrategy.generate({}, hass);
+const darkDashboard = await DarkStrategy.generate({}, hass);
+assert.equal(lightDashboard.views[0].cards[0].appearance, "light");
+assert.equal(darkDashboard.views[0].cards[0].appearance, "dark");
 
 const roomCard = new RoomCard();
 roomCard.setConfig(bedroomConfig);
@@ -142,12 +200,36 @@ assert.doesNotMatch(
   /<strong>Humidity:<\/strong>/,
   "unavailable humidity must not be promoted into the room summary",
 );
+assert.match(roomCard.shadowRoot.innerHTML, /font-size: 0\.875rem/);
+assert.match(roomCard.shadowRoot.innerHTML, /focus-visible/);
+assert.match(roomCard.shadowRoot.innerHTML, /min-height: 44px/);
 
 const hiddenCard = new RoomCard();
 hiddenCard.setConfig({ ...bedroomConfig, unavailable_mode: "hide" });
 hiddenCard.hass = hass;
 assert.doesNotMatch(hiddenCard.shadowRoot.innerHTML, /Unavailable devices/);
 assert.doesNotMatch(hiddenCard.shadowRoot.innerHTML, /Bedroom Humidity/);
+
+const overviewCard = new OverviewCard();
+overviewCard.setConfig(overviewConfig);
+overviewCard.hass = hass;
+assert.match(overviewCard.shadowRoot.innerHTML, />Assist</);
+assert.match(overviewCard.shadowRoot.innerHTML, />Scenes</);
+assert.match(overviewCard.shadowRoot.innerHTML, />Automations</);
+assert.match(overviewCard.shadowRoot.innerHTML, /Good Night/);
+assert.match(overviewCard.shadowRoot.innerHTML, /Hall Lights/);
+
+overviewCard.launchAssist();
+const assistEvent = overviewCard.events.at(-1);
+assert.equal(assistEvent.type, "hass-action");
+assert.equal(assistEvent.detail.config.tap_action.action, "assist");
+assert.equal(assistEvent.detail.config.tap_action.pipeline_id, "preferred");
+assert.equal(assistEvent.detail.config.tap_action.start_listening, true);
+
+await overviewCard.activateGlobalAction("scene.good_night");
+await overviewCard.activateGlobalAction("automation.hall_lights");
+assert.deepEqual(serviceCalls.at(-2), ["scene", "turn_on", { entity_id: "scene.good_night" }]);
+assert.deepEqual(serviceCalls.at(-1), ["automation", "toggle", { entity_id: "automation.hall_lights" }]);
 
 entities = entities.concat([
   { entity_id: "switch.bedroom_new_device", device_id: "area_device_2", name: "New Bedroom Device" },
@@ -160,6 +242,19 @@ await roomCard.refreshDiscovery();
 assert.ok(
   roomCard._config.room.items.some((item) => item.entity_id === "switch.bedroom_new_device"),
   "live discovery must pick up a newly added entity in an existing Area",
+);
+
+entities = entities.concat([
+  { entity_id: "scene.movie_time", name: "Movie Time" },
+]);
+states["scene.movie_time"] = {
+  state: "2026-08-16T13:00:00+00:00",
+  attributes: { friendly_name: "Movie Time" },
+};
+await overviewCard.refreshDiscovery();
+assert.ok(
+  overviewCard._config.global_actions.some((item) => item.entity_id === "scene.movie_time"),
+  "live discovery must pick up newly added scenes",
 );
 
 console.log("HA Roomboard behavior tests passed");
