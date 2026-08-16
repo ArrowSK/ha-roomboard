@@ -1,5 +1,7 @@
-const ROOMBOARD_VERSION = "0.2.1";
+const ROOMBOARD_VERSION = "0.3.0";
 const STRATEGY_TYPE = "ha-roomboard";
+const LIGHT_STRATEGY_TYPE = "ha-roomboard-light";
+const DARK_STRATEGY_TYPE = "ha-roomboard-dark";
 const DEFAULT_REFRESH_SECONDS = 60;
 
 const PRIMARY_DOMAINS = new Set([
@@ -15,11 +17,18 @@ const PRIMARY_DOMAINS = new Set([
   "water_heater",
   "alarm_control_panel",
   "scene",
+  "automation",
   "input_boolean",
   "camera",
 ]);
 
-const DIRECT_TOGGLE_DOMAINS = new Set(["light", "switch", "fan", "input_boolean"]);
+const DIRECT_TOGGLE_DOMAINS = new Set([
+  "light",
+  "switch",
+  "fan",
+  "input_boolean",
+  "automation",
+]);
 
 const IMPORTANT_SENSOR_CLASSES = new Set([
   "temperature",
@@ -57,7 +66,6 @@ const SECONDARY_SENSOR_CLASSES = new Set([
 ]);
 
 const ALWAYS_EXCLUDED_DOMAINS = new Set([
-  "automation",
   "calendar",
   "conversation",
   "device_tracker",
@@ -244,6 +252,7 @@ function categoryRank(item) {
     camera: 110,
     alarm_control_panel: 120,
     scene: 130,
+    automation: 135,
     input_boolean: 140,
     binary_sensor: 200,
     sensor: 210,
@@ -385,6 +394,33 @@ function buildRoom(area, devices, entities, hass, options) {
   };
 }
 
+function buildGlobalActions(entities, hass, options) {
+  const result = [];
+  for (const entry of entities) {
+    const entityId = entry.entity_id;
+    const domain = domainOf(entityId);
+    if (domain !== "scene" && domain !== "automation") continue;
+    if (options.excludeEntities.has(entityId)) continue;
+    if (entry.disabled_by || entry.hidden_by) continue;
+    if (entry.entity_category === "config" || entry.entity_category === "diagnostic") continue;
+    const stateObj = hass.states[entityId];
+    if (!stateObj) continue;
+    if (domain === "scene" && options.showScenes === false) continue;
+    if (domain === "automation" && options.showAutomations === false) continue;
+    result.push({
+      entity_id: entityId,
+      name: friendlyName(entry, stateObj),
+      domain,
+      icon: entityIcon(stateObj, domain),
+    });
+  }
+  result.sort((a, b) => {
+    if (a.domain !== b.domain) return a.domain === "scene" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return result;
+}
+
 function discoveryConfig(config = {}) {
   return {
     include_areas: asArray(config.include_areas),
@@ -394,6 +430,8 @@ function discoveryConfig(config = {}) {
     room_order: asArray(config.room_order),
     show_empty_areas: config.show_empty_areas === true,
     deduplicate: config.deduplicate !== false,
+    show_scenes: config.show_scenes !== false,
+    show_automations: config.show_automations !== false,
   };
 }
 
@@ -438,11 +476,17 @@ async function discoverDashboard(config, hass) {
     .map((area) => buildRoom(area, devices, entities, hass, options))
     .filter((room) => room.items.length > 0 || config.show_empty_areas === true);
 
+  const globalActions = buildGlobalActions(entities, hass, {
+    excludeEntities,
+    showScenes: config.show_scenes !== false,
+    showAutomations: config.show_automations !== false,
+  });
+
   const nav = [
     { title: "Home", path: "home", icon: "mdi:home-outline" },
     ...rooms.map((room) => ({ title: room.title, path: room.path, icon: room.icon, area_id: room.area_id })),
   ];
-  return { rooms, nav };
+  return { rooms, nav, globalActions };
 }
 
 function escapeHtml(value) {
@@ -460,6 +504,14 @@ function displayState(hass, entityId) {
   const unit = stateUnit(stateObj);
   const value = stateObj.state;
   return unit ? `${value} ${unit}` : value.replaceAll("_", " ");
+}
+
+function displayActionState(hass, item) {
+  const stateObj = hass?.states?.[item.entity_id];
+  if (isUnavailableState(stateObj)) return "Unavailable";
+  if (item.domain === "scene") return "Tap to run";
+  if (item.domain === "automation") return stateObj.state === "on" ? "Enabled" : "Disabled";
+  return displayState(hass, item.entity_id);
 }
 
 function isActiveState(stateObj) {
@@ -484,6 +536,7 @@ function entityIcon(stateObj, fallbackDomain) {
     water_heater: "mdi:water-boiler",
     alarm_control_panel: "mdi:shield-home-outline",
     scene: "mdi:palette-outline",
+    automation: "mdi:robot-outline",
     input_boolean: "mdi:toggle-switch-outline",
     camera: "mdi:cctv",
     sensor: "mdi:gauge",
@@ -505,6 +558,10 @@ function bestSummaryEntity(room, key, hass) {
   return candidates.find((entityId) => !isUnavailableState(hass.states[entityId])) || null;
 }
 
+function normalizeAppearance(value) {
+  return ["system", "light", "dark"].includes(value) ? value : "system";
+}
+
 class HaRoomboardDashboardStrategy extends HTMLElement {
   static noEditor = true;
 
@@ -514,7 +571,7 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
 
   static async generate(config, hass) {
     const liveConfig = discoveryConfig(config);
-    const { rooms, nav } = await discoverDashboard(liveConfig, hass);
+    const { rooms, nav, globalActions } = await discoverDashboard(liveConfig, hass);
     const refreshSeconds = Math.max(30, Number(config.refresh_interval || DEFAULT_REFRESH_SECONDS));
     const unavailableMode = ["collapse", "show", "hide"].includes(config.unavailable_mode)
       ? config.unavailable_mode
@@ -523,12 +580,16 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
         : config.show_unavailable === true
           ? "show"
           : "collapse";
+    const appearance = normalizeAppearance(config.appearance);
 
     const common = {
       nav,
       discovery_config: liveConfig,
       refresh_interval: refreshSeconds,
       unavailable_mode: unavailableMode,
+      appearance,
+      assist_pipeline: config.assist_pipeline || "preferred",
+      assist_start_listening: config.assist_start_listening !== false,
     };
 
     return {
@@ -544,6 +605,7 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
               type: "custom:ha-roomboard-overview",
               title: config.title || hass.config.location_name || "Home",
               rooms,
+              global_actions: globalActions,
               ...common,
             },
           ],
@@ -564,6 +626,32 @@ class HaRoomboardDashboardStrategy extends HTMLElement {
         })),
       ],
     };
+  }
+}
+
+class HaRoomboardLightDashboardStrategy extends HaRoomboardDashboardStrategy {
+  static getCreateSuggestions(_hass) {
+    return { title: "Rooms · Light", icon: "mdi:white-balance-sunny" };
+  }
+
+  static async generate(config, hass) {
+    return super.generate(
+      { ...config, appearance: "light", title: config.title || "HA Roomboard Light" },
+      hass,
+    );
+  }
+}
+
+class HaRoomboardDarkDashboardStrategy extends HaRoomboardDashboardStrategy {
+  static getCreateSuggestions(_hass) {
+    return { title: "Rooms · Dark", icon: "mdi:weather-night" };
+  }
+
+  static async generate(config, hass) {
+    return super.generate(
+      { ...config, appearance: "dark", title: config.title || "HA Roomboard Dark" },
+      hass,
+    );
   }
 }
 
@@ -667,15 +755,50 @@ class RoomboardBaseCard extends HTMLElement {
   }
 
   baseStyles() {
+    const appearance = normalizeAppearance(this._config?.appearance);
+    const palette = appearance === "light"
+      ? `
+        --primary-background-color: #f5f7fa;
+        --card-background-color: #ffffff;
+        --primary-text-color: #1f2428;
+        --secondary-text-color: #4b5560;
+        --divider-color: #d1d7de;
+        --primary-color: #006d83;
+        color-scheme: light;
+      `
+      : appearance === "dark"
+        ? `
+          --primary-background-color: #101316;
+          --card-background-color: #1a1f24;
+          --primary-text-color: #f4f7f9;
+          --secondary-text-color: #b9c3ca;
+          --divider-color: #3a424a;
+          --primary-color: #21b7d0;
+          color-scheme: dark;
+        `
+        : "";
+
     return `
       :host {
+        ${palette}
         display: block;
         min-height: 100%;
         color: var(--primary-text-color);
         background: var(--primary-background-color);
         box-sizing: border-box;
+        font-size: 16px;
+        line-height: 1.4;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
       }
       * { box-sizing: border-box; }
+      button, a { font: inherit; }
+      button:focus-visible,
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid var(--primary-color);
+        outline-offset: 3px;
+      }
       .shell {
         min-height: 100vh;
         padding: 12px 16px 28px;
@@ -689,7 +812,7 @@ class RoomboardBaseCard extends HTMLElement {
         z-index: 20;
         margin: -4px -4px 18px;
         padding: 8px 4px;
-        background: color-mix(in srgb, var(--primary-background-color) 90%, transparent);
+        background: color-mix(in srgb, var(--primary-background-color) 92%, transparent);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
       }
@@ -706,22 +829,23 @@ class RoomboardBaseCard extends HTMLElement {
         align-items: center;
         gap: 7px;
         flex: 0 0 auto;
-        min-height: 42px;
+        min-height: 44px;
         padding: 0 14px;
         border-radius: 14px;
         color: var(--secondary-text-color);
         background: var(--card-background-color);
-        border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+        border: 1px solid color-mix(in srgb, var(--divider-color) 82%, transparent);
         text-decoration: none;
-        font-size: 0.94rem;
-        font-weight: 600;
+        font-size: 0.9375rem;
+        line-height: 1.35;
+        font-weight: 650;
       }
       .nav-item.selected {
         color: var(--primary-text-color);
-        border-color: color-mix(in srgb, var(--primary-color) 42%, var(--divider-color));
-        background: color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
+        border-color: color-mix(in srgb, var(--primary-color) 56%, var(--divider-color));
+        background: color-mix(in srgb, var(--primary-color) 13%, var(--card-background-color));
       }
-      .nav-item ha-icon { --mdc-icon-size: 19px; }
+      .nav-item ha-icon { --mdc-icon-size: 20px; }
       .header {
         max-width: 1440px;
         margin: 0 auto 18px;
@@ -729,14 +853,15 @@ class RoomboardBaseCard extends HTMLElement {
       .eyebrow {
         color: var(--secondary-text-color);
         text-transform: uppercase;
-        font-size: 0.76rem;
-        letter-spacing: 0.09em;
+        font-size: 0.875rem;
+        line-height: 1.4;
+        letter-spacing: 0.07em;
         font-weight: 700;
       }
       h1 {
         margin: 6px 0 8px;
-        font-size: clamp(1.7rem, 4vw, 2.6rem);
-        line-height: 1.05;
+        font-size: clamp(1.8rem, 4vw, 2.6rem);
+        line-height: 1.1;
       }
       .summary {
         display: flex;
@@ -747,19 +872,28 @@ class RoomboardBaseCard extends HTMLElement {
       .summary-chip {
         display: inline-flex;
         align-items: center;
-        min-height: 32px;
+        min-height: 34px;
         padding: 0 11px;
         border-radius: 999px;
-        background: color-mix(in srgb, var(--card-background-color) 88%, transparent);
-        border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
-        font-size: 0.88rem;
-        line-height: 1.25;
+        background: color-mix(in srgb, var(--card-background-color) 92%, transparent);
+        border: 1px solid color-mix(in srgb, var(--divider-color) 82%, transparent);
+        font-size: 0.875rem;
+        line-height: 1.35;
+        font-weight: 500;
       }
       @media (max-width: 600px) {
         .shell { padding: 8px 10px 22px; }
         .nav { margin-bottom: 14px; }
-        .nav-item { min-height: 40px; padding: 0 12px; }
-        .nav-item span { font-size: 0.88rem; }
+        .nav-item { min-height: 44px; padding: 0 12px; }
+        .nav-item span { font-size: 0.875rem; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.001ms !important;
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+        }
       }
     `;
   }
@@ -770,6 +904,24 @@ class RoomboardBaseCard extends HTMLElement {
         bubbles: true,
         composed: true,
         detail: { entityId },
+      }),
+    );
+  }
+
+  launchAssist() {
+    const tapAction = {
+      action: "assist",
+      pipeline_id: this._config?.assist_pipeline || "preferred",
+      start_listening: this._config?.assist_start_listening !== false,
+    };
+    this.dispatchEvent(
+      new CustomEvent("hass-action", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          config: { tap_action: tapAction },
+          action: "tap",
+        },
       }),
     );
   }
@@ -866,13 +1018,13 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           <span class="icon-wrap"><ha-icon icon="${escapeHtml(icon)}"></ha-icon></span>
           <span class="tile-copy">
             <span class="tile-name">${escapeHtml(item.name)}</span>
-            <span class="tile-state">${escapeHtml(displayState(this._hass, item.entity_id))}</span>
+            <span class="tile-state">${escapeHtml(displayActionState(this._hass, item))}</span>
             ${item.device_name && item.device_name !== item.name ? `<span class="device-name">${escapeHtml(item.device_name)}</span>` : ""}
           </span>
         </button>
         <div class="tile-footer">
           <div class="metrics">${secondary}</div>
-          <button class="more" type="button" aria-label="More information" data-action="more" data-entity="${escapeHtml(
+          <button class="more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-action="more" data-entity="${escapeHtml(
             item.entity_id,
           )}">•••</button>
         </div>
@@ -913,7 +1065,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
     } else if (unavailableItems.length && mode === "collapse") {
       unavailableSection = `
         <details class="unavailable-section" ${this._unavailableOpen ? "open" : ""}>
-          <summary>
+          <summary tabindex="0">
             <span>Unavailable devices</span>
             <span>${unavailableItems.length}</span>
           </summary>
@@ -936,17 +1088,17 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           min-height: 184px;
           border-radius: 20px;
           background: var(--card-background-color);
-          border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+          border: 1px solid color-mix(in srgb, var(--divider-color) 82%, transparent);
           box-shadow: 0 6px 20px color-mix(in srgb, #000 7%, transparent);
           overflow: hidden;
           transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
         }
         .tile:hover { transform: translateY(-1px); }
         .tile.active {
-          border-color: color-mix(in srgb, var(--primary-color) 52%, var(--divider-color));
-          background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+          border-color: color-mix(in srgb, var(--primary-color) 58%, var(--divider-color));
+          background: color-mix(in srgb, var(--primary-color) 11%, var(--card-background-color));
         }
-        .tile.unavailable { opacity: 0.52; }
+        .tile.unavailable { opacity: 0.78; }
         .tile-main {
           width: 100%;
           min-height: 136px;
@@ -960,7 +1112,6 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           background: transparent;
           text-align: left;
           cursor: pointer;
-          font: inherit;
         }
         .icon-wrap {
           width: 46px;
@@ -969,11 +1120,11 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background: color-mix(in srgb, var(--primary-text-color) 7%, transparent);
+          background: color-mix(in srgb, var(--primary-text-color) 8%, transparent);
         }
         .active .icon-wrap {
           color: var(--primary-color);
-          background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+          background: color-mix(in srgb, var(--primary-color) 18%, transparent);
         }
         .icon-wrap ha-icon { --mdc-icon-size: 25px; }
         .tile-copy {
@@ -986,7 +1137,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           display: block;
           font-size: 1rem;
           font-weight: 700;
-          line-height: 1.28;
+          line-height: 1.35;
           overflow-wrap: anywhere;
           word-break: normal;
           hyphens: auto;
@@ -994,29 +1145,29 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         .tile-state {
           display: block;
           color: var(--secondary-text-color);
-          font-size: 0.9rem;
-          line-height: 1.3;
-          font-weight: 500;
+          font-size: 0.9375rem;
+          line-height: 1.4;
+          font-weight: 550;
           text-transform: capitalize;
           overflow-wrap: anywhere;
         }
         .device-name {
           display: block;
           color: var(--secondary-text-color);
-          font-size: 0.82rem;
-          line-height: 1.3;
+          font-size: 0.875rem;
+          line-height: 1.4;
           font-weight: 500;
           overflow-wrap: anywhere;
           word-break: normal;
           hyphens: auto;
         }
         .tile-footer {
-          min-height: 44px;
+          min-height: 48px;
           display: flex;
           align-items: flex-end;
           justify-content: space-between;
           gap: 8px;
-          padding: 5px 9px 10px 16px;
+          padding: 5px 8px 8px 16px;
         }
         .metrics {
           min-width: 0;
@@ -1024,27 +1175,27 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           flex-wrap: wrap;
           gap: 5px 9px;
           color: var(--secondary-text-color);
-          font-size: 0.8rem;
-          line-height: 1.25;
+          font-size: 0.875rem;
+          line-height: 1.35;
           font-weight: 500;
           white-space: normal;
           overflow: visible;
         }
         .metrics span { white-space: nowrap; }
         .more {
-          width: 36px;
-          height: 32px;
+          width: 44px;
+          height: 44px;
           flex: 0 0 auto;
           border: 0;
-          border-radius: 10px;
+          border-radius: 12px;
           color: var(--secondary-text-color);
           background: transparent;
           cursor: pointer;
-          font-size: 0.9rem;
+          font-size: 1rem;
           font-weight: 700;
           letter-spacing: 1px;
         }
-        .more:hover { background: color-mix(in srgb, var(--primary-text-color) 7%, transparent); }
+        .more:hover { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
         .empty {
           max-width: 1440px;
           margin: 0 auto;
@@ -1052,6 +1203,8 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           border-radius: 18px;
           background: var(--card-background-color);
           color: var(--secondary-text-color);
+          font-size: 0.9375rem;
+          line-height: 1.5;
         }
         .section-divider,
         .unavailable-section {
@@ -1064,10 +1217,10 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           justify-content: space-between;
           gap: 12px;
           color: var(--secondary-text-color);
-          font-size: 0.84rem;
+          font-size: 0.875rem;
           font-weight: 700;
           text-transform: uppercase;
-          letter-spacing: 0.07em;
+          letter-spacing: 0.06em;
         }
         .section-divider::before {
           content: "";
@@ -1089,7 +1242,8 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           gap: 12px;
           cursor: pointer;
           color: var(--secondary-text-color);
-          font-size: 0.9rem;
+          font-size: 0.9375rem;
+          line-height: 1.4;
           font-weight: 700;
           list-style: none;
         }
@@ -1106,11 +1260,11 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           }
           .icon-wrap { width: 40px; height: 40px; border-radius: 13px; }
           .icon-wrap ha-icon { --mdc-icon-size: 23px; }
-          .tile-name { font-size: 0.96rem; line-height: 1.25; }
-          .tile-state { font-size: 0.86rem; }
-          .device-name { font-size: 0.78rem; }
-          .tile-footer { min-height: 42px; padding-left: 11px; }
-          .metrics { font-size: 0.76rem; gap: 4px 7px; }
+          .tile-name { font-size: 0.9375rem; line-height: 1.35; }
+          .tile-state { font-size: 0.875rem; }
+          .device-name { font-size: 0.875rem; }
+          .tile-footer { min-height: 46px; padding-left: 11px; }
+          .metrics { font-size: 0.875rem; gap: 4px 7px; }
           .metrics span:nth-child(n+2) { display: none; }
         }
       </style>
@@ -1143,8 +1297,12 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
     const refreshedRooms = discovery.rooms.filter((room) => knownAreaIds.has(room.area_id));
     const knownPaths = new Set(this._config.nav.map((item) => item.path));
     const refreshedNav = discovery.nav.filter((item) => knownPaths.has(item.path));
-    if (refreshedRooms.length) this._config = { ...this._config, rooms: refreshedRooms };
-    if (refreshedNav.length) this._config = { ...this._config, nav: refreshedNav };
+    this._config = {
+      ...this._config,
+      rooms: refreshedRooms,
+      nav: refreshedNav.length ? refreshedNav : this._config.nav,
+      global_actions: discovery.globalActions,
+    };
   }
 
   roomSummary(room) {
@@ -1154,6 +1312,53 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
       if (entityId) values.push(displayState(this._hass, entityId));
     }
     return values.join(" · ");
+  }
+
+  actionHtml(item) {
+    const stateObj = this._hass?.states?.[item.entity_id];
+    const active = item.domain === "automation" && stateObj?.state === "on";
+    return `
+      <article class="action-card ${active ? "active" : ""}">
+        <button class="action-main" type="button" data-global-action="activate" data-entity="${escapeHtml(item.entity_id)}">
+          <span class="action-icon"><ha-icon icon="${escapeHtml(item.icon || entityIcon(stateObj, item.domain))}"></ha-icon></span>
+          <span class="action-copy">
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${escapeHtml(displayActionState(this._hass, item))}</span>
+          </span>
+        </button>
+        <button class="action-more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-global-action="more" data-entity="${escapeHtml(item.entity_id)}">•••</button>
+      </article>`;
+  }
+
+  async activateGlobalAction(entityId) {
+    const stateObj = this._hass?.states?.[entityId];
+    if (!stateObj) return;
+    const domain = domainOf(entityId);
+    try {
+      if (domain === "scene") {
+        await this._hass.callService("scene", "turn_on", { entity_id: entityId });
+      } else if (domain === "automation") {
+        await this._hass.callService("automation", "toggle", { entity_id: entityId });
+      } else {
+        this.showMoreInfo(entityId);
+      }
+    } catch (error) {
+      console.error("HA Roomboard action failed", entityId, error);
+      this.showMoreInfo(entityId);
+    }
+  }
+
+  bindOverviewEvents() {
+    this.shadowRoot.querySelectorAll("button[data-global-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const target = event.currentTarget;
+        const entityId = target.dataset.entity;
+        if (target.dataset.globalAction === "more") this.showMoreInfo(entityId);
+        else this.activateGlobalAction(entityId);
+      });
+    });
+    const assist = this.shadowRoot.querySelector("button[data-assist]");
+    if (assist) assist.addEventListener("click", () => this.launchAssist());
   }
 
   render() {
@@ -1176,12 +1381,65 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
       })
       .join("");
 
+    const actions = asArray(this._config.global_actions).filter(
+      (item) => !isUnavailableState(this._hass.states[item.entity_id]),
+    );
+    const scenes = actions.filter((item) => item.domain === "scene");
+    const automations = actions.filter((item) => item.domain === "automation");
+    const sceneCards = scenes.map((item) => this.actionHtml(item)).join("");
+    const automationCards = automations.map((item) => this.actionHtml(item)).join("");
+
     this.shadowRoot.innerHTML = `
       <style>
         ${this.baseStyles()}
-        .overview-grid {
+        .overview-grid,
+        .action-grid,
+        .home-section,
+        .assist-wrap {
           max-width: 1440px;
-          margin: 0 auto;
+          margin-left: auto;
+          margin-right: auto;
+        }
+        .assist-wrap { margin-bottom: 22px; }
+        .assist-card {
+          width: 100%;
+          min-height: 82px;
+          display: grid;
+          grid-template-columns: 50px minmax(0, 1fr) auto;
+          gap: 14px;
+          align-items: center;
+          padding: 14px 16px;
+          border-radius: 20px;
+          border: 1px solid color-mix(in srgb, var(--primary-color) 52%, var(--divider-color));
+          color: var(--primary-text-color);
+          background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+          cursor: pointer;
+          text-align: left;
+          box-shadow: 0 6px 20px color-mix(in srgb, #000 6%, transparent);
+        }
+        .assist-card:hover {
+          background: color-mix(in srgb, var(--primary-color) 15%, var(--card-background-color));
+        }
+        .assist-icon {
+          width: 50px;
+          height: 50px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 16px;
+          color: var(--primary-color);
+          background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+        }
+        .assist-icon ha-icon { --mdc-icon-size: 27px; }
+        .assist-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .assist-copy strong { font-size: 1.0625rem; line-height: 1.35; }
+        .assist-copy span { color: var(--secondary-text-color); font-size: 0.9375rem; line-height: 1.4; }
+        .assist-open {
+          color: var(--primary-color);
+          font-size: 0.9375rem;
+          font-weight: 700;
+        }
+        .overview-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
           gap: 12px;
@@ -1196,11 +1454,11 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           border-radius: 20px;
           color: var(--primary-text-color);
           background: var(--card-background-color);
-          border: 1px solid color-mix(in srgb, var(--divider-color) 72%, transparent);
+          border: 1px solid color-mix(in srgb, var(--divider-color) 82%, transparent);
           text-decoration: none;
           box-shadow: 0 6px 20px color-mix(in srgb, #000 7%, transparent);
         }
-        .room-card:hover { border-color: color-mix(in srgb, var(--primary-color) 42%, var(--divider-color)); }
+        .room-card:hover { border-color: color-mix(in srgb, var(--primary-color) 48%, var(--divider-color)); }
         .room-icon {
           width: 48px;
           height: 48px;
@@ -1209,7 +1467,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           justify-content: center;
           border-radius: 15px;
           color: var(--primary-color);
-          background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+          background: color-mix(in srgb, var(--primary-color) 13%, transparent);
         }
         .room-copy {
           min-width: 0;
@@ -1218,30 +1476,127 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           gap: 5px;
           overflow-wrap: anywhere;
         }
-        .room-copy strong { font-size: 1.02rem; line-height: 1.25; }
+        .room-copy strong { font-size: 1.0625rem; line-height: 1.35; }
         .room-copy span {
           color: var(--secondary-text-color);
-          font-size: 0.88rem;
-          line-height: 1.3;
+          font-size: 0.9375rem;
+          line-height: 1.4;
           font-weight: 500;
           text-transform: capitalize;
         }
         .count {
-          min-width: 32px;
-          height: 32px;
+          min-width: 34px;
+          height: 34px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 0 8px;
+          padding: 0 9px;
           border-radius: 999px;
           color: var(--secondary-text-color);
-          background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
-          font-size: 0.82rem;
+          background: color-mix(in srgb, var(--primary-text-color) 7%, transparent);
+          font-size: 0.875rem;
           font-weight: 700;
         }
+        .home-section { margin-top: 28px; }
+        .section-heading {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
+          margin: 0 0 12px;
+        }
+        .section-heading h2 {
+          margin: 0;
+          font-size: 1.25rem;
+          line-height: 1.3;
+        }
+        .section-heading span {
+          color: var(--secondary-text-color);
+          font-size: 0.875rem;
+          line-height: 1.4;
+          font-weight: 600;
+        }
+        .action-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+          gap: 12px;
+        }
+        .action-card {
+          min-height: 104px;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 48px;
+          border-radius: 18px;
+          overflow: hidden;
+          background: var(--card-background-color);
+          border: 1px solid color-mix(in srgb, var(--divider-color) 82%, transparent);
+          box-shadow: 0 5px 16px color-mix(in srgb, #000 6%, transparent);
+        }
+        .action-card.active {
+          border-color: color-mix(in srgb, var(--primary-color) 54%, var(--divider-color));
+          background: color-mix(in srgb, var(--primary-color) 9%, var(--card-background-color));
+        }
+        .action-main {
+          min-width: 0;
+          min-height: 104px;
+          display: grid;
+          grid-template-columns: 44px minmax(0, 1fr);
+          gap: 12px;
+          align-items: center;
+          padding: 14px 8px 14px 14px;
+          border: 0;
+          color: inherit;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+        }
+        .action-icon {
+          width: 44px;
+          height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 14px;
+          color: var(--primary-color);
+          background: color-mix(in srgb, var(--primary-color) 13%, transparent);
+        }
+        .action-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+        .action-copy strong {
+          font-size: 1rem;
+          line-height: 1.35;
+          overflow-wrap: anywhere;
+        }
+        .action-copy span {
+          color: var(--secondary-text-color);
+          font-size: 0.9375rem;
+          line-height: 1.4;
+          font-weight: 500;
+        }
+        .action-more {
+          width: 44px;
+          min-height: 44px;
+          align-self: end;
+          justify-self: center;
+          margin-bottom: 6px;
+          border: 0;
+          border-radius: 12px;
+          color: var(--secondary-text-color);
+          background: transparent;
+          cursor: pointer;
+          font-size: 1rem;
+          font-weight: 700;
+        }
+        .action-more:hover { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
         @media (max-width: 600px) {
           .overview-grid { grid-template-columns: 1fr; gap: 9px; }
           .room-card { min-height: 100px; border-radius: 18px; }
+          .assist-card {
+            grid-template-columns: 46px minmax(0, 1fr);
+            min-height: 78px;
+            border-radius: 18px;
+          }
+          .assist-icon { width: 46px; height: 46px; }
+          .assist-open { display: none; }
+          .action-grid { grid-template-columns: 1fr; gap: 9px; }
         }
       </style>
       <div class="shell">
@@ -1249,15 +1604,56 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
         <header class="header">
           <div class="eyebrow">HA Roomboard</div>
           <h1>${escapeHtml(this._config.title || "Home")}</h1>
-          <div class="summary"><span class="summary-chip">${this._config.rooms.length} rooms</span></div>
+          <div class="summary">
+            <span class="summary-chip">${this._config.rooms.length} rooms</span>
+            <span class="summary-chip">${scenes.length} scenes</span>
+            <span class="summary-chip">${automations.length} automations</span>
+          </div>
         </header>
+
+        <div class="assist-wrap">
+          <button class="assist-card" type="button" data-assist aria-label="Open Home Assistant Assist">
+            <span class="assist-icon"><ha-icon icon="mdi:creation-outline"></ha-icon></span>
+            <span class="assist-copy">
+              <strong>Assist</strong>
+              <span>Ask Home Assistant or control your home by voice.</span>
+            </span>
+            <span class="assist-open">Open</span>
+          </button>
+        </div>
+
         <main class="overview-grid">${roomCards}</main>
+
+        ${scenes.length ? `
+          <section class="home-section" aria-labelledby="roomboard-scenes-heading">
+            <div class="section-heading">
+              <h2 id="roomboard-scenes-heading">Scenes</h2>
+              <span>${scenes.length}</span>
+            </div>
+            <div class="action-grid">${sceneCards}</div>
+          </section>` : ""}
+
+        ${automations.length ? `
+          <section class="home-section" aria-labelledby="roomboard-automations-heading">
+            <div class="section-heading">
+              <h2 id="roomboard-automations-heading">Automations</h2>
+              <span>${automations.length}</span>
+            </div>
+            <div class="action-grid">${automationCards}</div>
+          </section>` : ""}
       </div>`;
+    this.bindOverviewEvents();
   }
 }
 
 if (!customElements.get("ll-strategy-dashboard-ha-roomboard")) {
   customElements.define("ll-strategy-dashboard-ha-roomboard", HaRoomboardDashboardStrategy);
+}
+if (!customElements.get("ll-strategy-dashboard-ha-roomboard-light")) {
+  customElements.define("ll-strategy-dashboard-ha-roomboard-light", HaRoomboardLightDashboardStrategy);
+}
+if (!customElements.get("ll-strategy-dashboard-ha-roomboard-dark")) {
+  customElements.define("ll-strategy-dashboard-ha-roomboard-dark", HaRoomboardDarkDashboardStrategy);
 }
 if (!customElements.get("ha-roomboard-room")) {
   customElements.define("ha-roomboard-room", HaRoomboardRoomCard);
@@ -1267,14 +1663,31 @@ if (!customElements.get("ha-roomboard-overview")) {
 }
 
 window.customStrategies = window.customStrategies || [];
-if (!window.customStrategies.some((strategy) => strategy.type === STRATEGY_TYPE)) {
-  window.customStrategies.push({
+const STRATEGIES = [
+  {
     type: STRATEGY_TYPE,
-    strategyType: "dashboard",
     name: "HA Roomboard",
-    description: "An automatic room-first dashboard generated from Home Assistant areas and entities.",
-    documentationURL: "https://github.com/ArrowSK/ha-roomboard",
-  });
+    description: "Automatic room-first dashboard that follows the Home Assistant appearance.",
+  },
+  {
+    type: LIGHT_STRATEGY_TYPE,
+    name: "HA Roomboard Light",
+    description: "Automatic room-first dashboard with a fixed accessible light palette.",
+  },
+  {
+    type: DARK_STRATEGY_TYPE,
+    name: "HA Roomboard Dark",
+    description: "Automatic room-first dashboard with a fixed accessible dark palette.",
+  },
+];
+for (const strategy of STRATEGIES) {
+  if (!window.customStrategies.some((registered) => registered.type === strategy.type)) {
+    window.customStrategies.push({
+      ...strategy,
+      strategyType: "dashboard",
+      documentationURL: "https://github.com/ArrowSK/ha-roomboard",
+    });
+  }
 }
 
 window.customCards = window.customCards || [];
