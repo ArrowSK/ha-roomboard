@@ -31,6 +31,11 @@ const requiredSnippets = [
   'min-height: 44px',
   ':focus-visible',
   'prefers-reduced-motion',
+  'automationEditorPath',
+  '/config/automation/edit/',
+  '/config/automation/show/',
+  'data-automation-toggle',
+  'toggleAutomationEnabled',
 ];
 
 for (const snippet of requiredSnippets) {

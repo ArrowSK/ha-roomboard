@@ -134,7 +134,7 @@ Object.assign(states, {
   },
   "automation.hall_lights": {
     state: "on",
-    attributes: { friendly_name: "Hall Lights" },
+    attributes: { friendly_name: "Hall Lights", id: "hall-lights-automation" },
   },
 });
 
@@ -203,6 +203,12 @@ assert.doesNotMatch(
 assert.match(roomCard.shadowRoot.innerHTML, /font-size: 0\.875rem/);
 assert.match(roomCard.shadowRoot.innerHTML, /focus-visible/);
 assert.match(roomCard.shadowRoot.innerHTML, /min-height: 44px/);
+assert.match(
+  roomCard.shadowRoot.innerHTML,
+  /href="\/config\/automation\/show\/automation\.bedroom_night_mode"/,
+  "room automation without an id should open the Home Assistant fallback configuration page",
+);
+assert.match(roomCard.shadowRoot.innerHTML, /data-automation-toggle="automation\.bedroom_night_mode"/);
 
 const hiddenCard = new RoomCard();
 hiddenCard.setConfig({ ...bedroomConfig, unavailable_mode: "hide" });
@@ -218,6 +224,12 @@ assert.match(overviewCard.shadowRoot.innerHTML, />Scenes</);
 assert.match(overviewCard.shadowRoot.innerHTML, />Automations</);
 assert.match(overviewCard.shadowRoot.innerHTML, /Good Night/);
 assert.match(overviewCard.shadowRoot.innerHTML, /Hall Lights/);
+assert.match(
+  overviewCard.shadowRoot.innerHTML,
+  /href="\/config\/automation\/edit\/hall-lights-automation"/,
+  "automation cards should open the native Home Assistant editor when attributes.id is available",
+);
+assert.match(overviewCard.shadowRoot.innerHTML, /data-automation-toggle="automation\.hall_lights"/);
 
 overviewCard.launchAssist();
 const assistEvent = overviewCard.events.at(-1);
@@ -229,7 +241,11 @@ assert.equal(assistEvent.detail.config.tap_action.start_listening, true);
 await overviewCard.activateGlobalAction("scene.good_night");
 await overviewCard.activateGlobalAction("automation.hall_lights");
 assert.deepEqual(serviceCalls.at(-2), ["scene", "turn_on", { entity_id: "scene.good_night" }]);
-assert.deepEqual(serviceCalls.at(-1), ["automation", "toggle", { entity_id: "automation.hall_lights" }]);
+assert.deepEqual(serviceCalls.at(-1), ["automation", "turn_off", { entity_id: "automation.hall_lights" }]);
+states["automation.hall_lights"].state = "off";
+await overviewCard.toggleAutomationEnabled("automation.hall_lights");
+assert.deepEqual(serviceCalls.at(-1), ["automation", "turn_on", { entity_id: "automation.hall_lights" }]);
+states["automation.hall_lights"].state = "on";
 
 entities = entities.concat([
   { entity_id: "switch.bedroom_new_device", device_id: "area_device_2", name: "New Bedroom Device" },

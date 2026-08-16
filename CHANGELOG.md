@@ -2,6 +2,16 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## 0.3.1 - 2026-08-16
+
+- Make the automation card itself an **edit** action, matching the way people naturally open an automation to inspect or change it.
+- Follow Home Assistant's native automation routes: use `/config/automation/edit/<id>` when an automation ID is available and fall back to `/config/automation/show/<entity_id>` otherwise.
+- Add a separate, accessible 44 px enable/disable control so pausing an automation is deliberate rather than an accidental card tap.
+- Keep the three-dot button dedicated to More Info and keep scene taps dedicated to running scenes.
+- Apply the same edit/toggle/More Info model to Area-assigned automations in room views.
+- Extend tests and repository validation around editor routing and explicit `automation.turn_on` / `automation.turn_off` behavior.
+- Rewrite the automation documentation around the actual human interaction instead of implementation details.
+
 ## 0.3.0 - 2026-08-16
 
 - Add global Home sections for Home Assistant scenes and automations, including entities that are not assigned to an Area.

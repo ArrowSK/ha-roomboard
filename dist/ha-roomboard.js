@@ -1,4 +1,4 @@
-const ROOMBOARD_VERSION = "0.3.0";
+const ROOMBOARD_VERSION = "0.3.1";
 const STRATEGY_TYPE = "ha-roomboard";
 const LIGHT_STRATEGY_TYPE = "ha-roomboard-light";
 const DARK_STRATEGY_TYPE = "ha-roomboard-dark";
@@ -27,7 +27,6 @@ const DIRECT_TOGGLE_DOMAINS = new Set([
   "switch",
   "fan",
   "input_boolean",
-  "automation",
 ]);
 
 const IMPORTANT_SENSOR_CLASSES = new Set([
@@ -514,6 +513,23 @@ function displayActionState(hass, item) {
   return displayState(hass, item.entity_id);
 }
 
+function automationEditorPath(hass, entityId) {
+  const automationId = hass?.states?.[entityId]?.attributes?.id;
+  return automationId
+    ? `/config/automation/edit/${encodeURIComponent(automationId)}`
+    : `/config/automation/show/${entityId}`;
+}
+
+function automationToggleMeta(hass, entityId) {
+  const enabled = hass?.states?.[entityId]?.state === "on";
+  return {
+    enabled,
+    service: enabled ? "turn_off" : "turn_on",
+    label: enabled ? "Disable automation" : "Enable automation",
+    icon: enabled ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline",
+  };
+}
+
 function isActiveState(stateObj) {
   if (!stateObj) return false;
   return ["on", "open", "opening", "home", "playing", "heat", "cool", "dry", "fan_only"].includes(
@@ -793,6 +809,31 @@ class RoomboardBaseCard extends HTMLElement {
       }
       * { box-sizing: border-box; }
       button, a { font: inherit; }
+      .automation-edit {
+        color: inherit;
+        text-decoration: none;
+      }
+      .automation-toggle {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 12px;
+        color: var(--secondary-text-color);
+        background: transparent;
+        cursor: pointer;
+      }
+      .automation-toggle[aria-pressed="true"] {
+        color: var(--primary-color);
+        background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+      }
+      .automation-toggle:hover {
+        background: color-mix(in srgb, var(--primary-text-color) 8%, transparent);
+      }
+      .automation-toggle ha-icon { --mdc-icon-size: 25px; }
       button:focus-visible,
       a:focus-visible,
       summary:focus-visible {
@@ -908,6 +949,18 @@ class RoomboardBaseCard extends HTMLElement {
     );
   }
 
+  async toggleAutomationEnabled(entityId) {
+    const hass = this._hass;
+    if (!hass?.states?.[entityId]) return;
+    const meta = automationToggleMeta(hass, entityId);
+    try {
+      await hass.callService("automation", meta.service, { entity_id: entityId });
+    } catch (error) {
+      console.error("HA Roomboard automation enable/disable failed", entityId, error);
+      this.showMoreInfo(entityId);
+    }
+  }
+
   launchAssist() {
     const tapAction = {
       action: "assist",
@@ -1009,24 +1062,36 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
       })
       .filter(Boolean)
       .join("");
+    const mainContent = `
+          <span class="icon-wrap"><ha-icon icon="${escapeHtml(icon)}"></ha-icon></span>
+          <span class="tile-copy">
+            <span class="tile-name">${escapeHtml(item.name)}</span>
+            <span class="tile-state">${escapeHtml(displayActionState(this._hass, item))}${item.domain === "automation" ? " · tap to edit" : ""}</span>
+            ${item.device_name && item.device_name !== item.name ? `<span class="device-name">${escapeHtml(item.device_name)}</span>` : ""}
+          </span>`;
+    const mainControl = item.domain === "automation"
+      ? `<a class="tile-main automation-edit" href="${escapeHtml(automationEditorPath(this._hass, item.entity_id))}" aria-label="Edit ${escapeHtml(item.name)} automation">${mainContent}</a>`
+      : `<button class="tile-main" type="button" data-action="activate" data-entity="${escapeHtml(item.entity_id)}">${mainContent}</button>`;
+    const automationToggle = item.domain === "automation"
+      ? (() => {
+          const meta = automationToggleMeta(this._hass, item.entity_id);
+          return `<button class="automation-toggle" type="button" data-automation-toggle="${escapeHtml(item.entity_id)}" aria-pressed="${meta.enabled}" aria-label="${escapeHtml(meta.label)}: ${escapeHtml(item.name)}" title="${escapeHtml(meta.label)}"><ha-icon icon="${meta.icon}"></ha-icon></button>`;
+        })()
+      : "";
 
     return `
       <article class="tile ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" data-entity="${escapeHtml(
         item.entity_id,
       )}">
-        <button class="tile-main" type="button" data-action="activate" data-entity="${escapeHtml(item.entity_id)}">
-          <span class="icon-wrap"><ha-icon icon="${escapeHtml(icon)}"></ha-icon></span>
-          <span class="tile-copy">
-            <span class="tile-name">${escapeHtml(item.name)}</span>
-            <span class="tile-state">${escapeHtml(displayActionState(this._hass, item))}</span>
-            ${item.device_name && item.device_name !== item.name ? `<span class="device-name">${escapeHtml(item.device_name)}</span>` : ""}
-          </span>
-        </button>
+        ${mainControl}
         <div class="tile-footer">
           <div class="metrics">${secondary}</div>
-          <button class="more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-action="more" data-entity="${escapeHtml(
-            item.entity_id,
-          )}">•••</button>
+          <div class="tile-actions">
+            ${automationToggle}
+            <button class="more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-action="more" data-entity="${escapeHtml(
+              item.entity_id,
+            )}">•••</button>
+          </div>
         </div>
       </article>`;
   }
@@ -1038,6 +1103,12 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         const entityId = target.dataset.entity;
         if (target.dataset.action === "more") this.showMoreInfo(entityId);
         else this.activate(entityId);
+      });
+    });
+    this.shadowRoot.querySelectorAll("button[data-automation-toggle]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const entityId = event.currentTarget.dataset.automationToggle;
+        this.toggleAutomationEnabled(entityId);
       });
     });
     const details = this.shadowRoot.querySelector("details.unavailable-section");
@@ -1182,6 +1253,12 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           overflow: visible;
         }
         .metrics span { white-space: nowrap; }
+        .tile-actions {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          margin-left: auto;
+        }
         .more {
           width: 44px;
           height: 44px;
@@ -1317,8 +1394,25 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
   actionHtml(item) {
     const stateObj = this._hass?.states?.[item.entity_id];
     const active = item.domain === "automation" && stateObj?.state === "on";
+    if (item.domain === "automation") {
+      const meta = automationToggleMeta(this._hass, item.entity_id);
+      return `
+        <article class="action-card ${active ? "active" : ""}">
+          <a class="action-main automation-edit" href="${escapeHtml(automationEditorPath(this._hass, item.entity_id))}" aria-label="Edit ${escapeHtml(item.name)} automation">
+            <span class="action-icon"><ha-icon icon="${escapeHtml(item.icon || entityIcon(stateObj, item.domain))}"></ha-icon></span>
+            <span class="action-copy">
+              <strong>${escapeHtml(item.name)}</strong>
+              <span>${escapeHtml(displayActionState(this._hass, item))} · tap to edit</span>
+            </span>
+          </a>
+          <div class="action-controls">
+            <button class="automation-toggle" type="button" data-automation-toggle="${escapeHtml(item.entity_id)}" aria-pressed="${meta.enabled}" aria-label="${escapeHtml(meta.label)}: ${escapeHtml(item.name)}" title="${escapeHtml(meta.label)}"><ha-icon icon="${meta.icon}"></ha-icon></button>
+            <button class="action-more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-global-action="more" data-entity="${escapeHtml(item.entity_id)}">•••</button>
+          </div>
+        </article>`;
+    }
     return `
-      <article class="action-card ${active ? "active" : ""}">
+      <article class="action-card">
         <button class="action-main" type="button" data-global-action="activate" data-entity="${escapeHtml(item.entity_id)}">
           <span class="action-icon"><ha-icon icon="${escapeHtml(item.icon || entityIcon(stateObj, item.domain))}"></ha-icon></span>
           <span class="action-copy">
@@ -1338,7 +1432,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
       if (domain === "scene") {
         await this._hass.callService("scene", "turn_on", { entity_id: entityId });
       } else if (domain === "automation") {
-        await this._hass.callService("automation", "toggle", { entity_id: entityId });
+        await this.toggleAutomationEnabled(entityId);
       } else {
         this.showMoreInfo(entityId);
       }
@@ -1355,6 +1449,12 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
         const entityId = target.dataset.entity;
         if (target.dataset.globalAction === "more") this.showMoreInfo(entityId);
         else this.activateGlobalAction(entityId);
+      });
+    });
+    this.shadowRoot.querySelectorAll("button[data-automation-toggle]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const entityId = event.currentTarget.dataset.automationToggle;
+        this.toggleAutomationEnabled(entityId);
       });
     });
     const assist = this.shadowRoot.querySelector("button[data-assist]");
@@ -1570,6 +1670,20 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           font-size: 0.9375rem;
           line-height: 1.4;
           font-weight: 500;
+        }
+        .action-controls {
+          min-height: 104px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 2px;
+          padding: 4px 0 6px;
+        }
+        .action-controls .action-more {
+          align-self: auto;
+          justify-self: auto;
+          margin-bottom: 0;
         }
         .action-more {
           width: 44px;

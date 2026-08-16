@@ -29,7 +29,7 @@ It is designed for the common smart-home case where Home Assistant exposes far m
 - Allows explicit include/exclude overrides when the automatic result is not what you want.
 - Uses no third-party Lovelace card as a runtime dependency.
 
-The default interaction model is deliberately conservative. Lights, switches, fans, input booleans, and Area-assigned automations toggle directly. Scenes run directly. Other device types open Home Assistant's More Info dialog rather than guessing a command that could be inappropriate for the device.
+The interaction model tries to make the obvious tap do the human thing. Lights, switches, fans, and input booleans toggle directly, while scenes run immediately. Automations are treated as things you are likely to inspect or tune: tap the automation card to open Home Assistant's editor, use the dedicated enable/disable switch when you want to pause or resume it, and use the three-dot button for More Info. Other device types still open Home Assistant's More Info dialog rather than guessing a command that could be inappropriate for the device.
 
 ## Requirements
 
@@ -73,10 +73,13 @@ While a Roomboard view is open, it listens for Home Assistant registry update ev
 
 The Home view has dedicated **Scenes** and **Automations** sections. These are global and do not require the entity to be assigned to an Area.
 
-- Selecting a scene calls `scene.turn_on`.
-- Selecting an automation toggles whether that automation is enabled or disabled. It does **not** manually run the automation's actions.
-- The three-dot button opens Home Assistant More Info.
-- Area-assigned scenes and automations can also appear as ordinary room tiles.
+- Tap a scene to run it with `scene.turn_on`.
+- Tap the body of an automation card to open Home Assistant's native automation editor. If the entity exposes an automation `id`, Roomboard opens `/config/automation/edit/<id>`; otherwise it falls back to Home Assistant's `/config/automation/show/<entity_id>` page.
+- Use the dedicated switch button on the automation card to enable or disable it. This never runs the automation's actions.
+- Use the three-dot button for Home Assistant More Info.
+- The same interaction model is used for Area-assigned automations inside room views.
+
+An automation is usually something you want to understand before changing. Separating **edit**, **enable/disable**, and **More Info** makes the dashboard faster to read and much harder to mis-tap.
 
 Set `show_scenes: false` or `show_automations: false` if you do not want one of the global sections.
 
