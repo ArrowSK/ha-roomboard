@@ -6,6 +6,8 @@ const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.ur
 
 const requiredSnippets = [
   'customElements.define("ll-strategy-dashboard-ha-roomboard"',
+  'customElements.define("ll-strategy-dashboard-ha-roomboard-light"',
+  'customElements.define("ll-strategy-dashboard-ha-roomboard-dark"',
   'customElements.define("ha-roomboard-room"',
   'customElements.define("ha-roomboard-overview"',
   'type: "config/area_registry/list"',
@@ -18,19 +20,23 @@ const requiredSnippets = [
   'unavailable_mode',
   'assignUniqueAreaIcons',
   'deduplicateItems',
-  'grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));',
-  'overflow-wrap: anywhere;',
-  '.metrics span { white-space: nowrap; }',
+  'buildGlobalActions',
+  'global_actions',
+  'action: "assist"',
+  'assist_pipeline',
+  'assist_start_listening',
+  'appearance: "light"',
+  'appearance: "dark"',
+  'font-size: 0.875rem',
+  'min-height: 44px',
+  ':focus-visible',
+  'prefers-reduced-motion',
 ];
 
 for (const snippet of requiredSnippets) {
   if (!source.includes(snippet)) {
     throw new Error(`Missing required implementation marker: ${snippet}`);
   }
-}
-
-if (source.includes('text-overflow: ellipsis;')) {
-  throw new Error("Roomboard must not ellipsize entity or device names");
 }
 
 const versionMatch = source.match(/const ROOMBOARD_VERSION = "([^"]+)"/);
@@ -41,6 +47,13 @@ if (versionMatch[1] !== pkg.version) {
 
 if (hacs.name !== "HA Roomboard") throw new Error("Unexpected HACS display name");
 if (hacs.filename !== "ha-roomboard.js") throw new Error("HACS filename must match repository plugin name");
+
+if (/text-overflow:\s*ellipsis/i.test(source)) {
+  throw new Error("Entity/device text must not regress to ellipsis-based truncation");
+}
+if (/\.tile\.unavailable\s*\{\s*opacity:\s*0\.[0-5]/i.test(source)) {
+  throw new Error("Unavailable tiles must retain readable opacity");
+}
 
 const forbiddenAssetPatterns = [
   /tuya[^\n]*(logo|icon|asset|font|css|stylesheet)/i,
