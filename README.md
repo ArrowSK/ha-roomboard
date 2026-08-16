@@ -1,112 +1,142 @@
 <p align="center">
-  <img src="assets/icon.png" alt="HA Roomboard icon" width="160">
+  <img src="assets/icon.png" alt="HA Roomboard" width="132">
 </p>
 
-# HA Roomboard
+<h1 align="center">HA Roomboard</h1>
 
-HA Roomboard is a frontend-only Home Assistant dashboard that builds itself from your existing Areas, devices, entities, scenes, and automations.
+<p align="center">
+  <strong>A room-first Home Assistant dashboard that builds itself.</strong><br>
+  Clean rooms, useful controls, scenes, automations and Assist — without hand-building hundreds of cards.
+</p>
 
-It is designed for the common smart-home case where Home Assistant exposes far more technical entities than anyone wants to see day to day. Roomboard creates a Home overview, one view per populated Area, a sticky room navigator, compact responsive device tiles, one-tap Assist access, and global scene/automation controls without requiring you to hand-build every room in YAML.
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=ArrowSK&repository=ha-roomboard&category=Dashboard"><img alt="Open in HACS" src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
+</p>
 
-## What it does
+<p align="center">
+  <img alt="Home Assistant 2026.5+" src="https://img.shields.io/badge/Home%20Assistant-2026.5%2B-41BDF5?logo=home-assistant&logoColor=white">
+  <img alt="HACS Dashboard" src="https://img.shields.io/badge/HACS-Dashboard-41BDF5">
+  <img alt="Validation" src="https://github.com/ArrowSK/ha-roomboard/actions/workflows/validate.yml/badge.svg">
+  <img alt="License" src="https://img.shields.io/github/license/ArrowSK/ha-roomboard">
+</p>
 
-- Discovers Areas, devices, and entities from Home Assistant's registry APIs.
-- Creates one dashboard view per populated Area.
-- Keeps a sticky room navigation bar at the top of every generated view.
-- Refreshes room discovery while the dashboard is open when Home Assistant's entity/device/area registries change, with a periodic fallback refresh.
-- Assigns distinct room icons automatically, using the Area name and a broad set of room types before falling back to neutral unique icons.
-- Gives each room a compact temperature, humidity, CO₂, and presence summary when an available sensor exists.
-- Shows everyday controls such as lights, switches, climate, fans, covers, locks, media players, vacuums, humidifiers, water heaters, cameras, scenes, automations, and alarms.
-- Shows all available non-hidden scenes and automations on the Home view even when they are not assigned to an Area.
-- Provides a prominent one-tap **Assist** launcher on the Home view.
-- Shows important environmental and safety sensors without dumping every diagnostic sensor into the room.
-- Attaches power, energy, current, voltage, and battery readings as secondary information where possible instead of creating extra tiles.
-- Suppresses obvious duplicate tiles with the same domain and display name by preferring the available entity.
-- Keeps unavailable/unknown entities out of the main grid and places them in a collapsed section at the bottom by default.
-- Uses wider responsive tiles, readable secondary text, and wrapped names instead of clipping long entity or device names.
-- Provides explicit **System**, **Light**, and **Dark** dashboard variants.
-- Excludes disabled, hidden, configuration, diagnostic, and administrative entities by default.
-- Allows explicit include/exclude overrides when the automatic result is not what you want.
-- Uses no third-party Lovelace card as a runtime dependency.
+> Home Assistant should feel like a home, not an entity registry.
 
-The interaction model tries to make the obvious tap do the human thing. Lights, switches, fans, and input booleans toggle directly, while scenes run immediately. Automations are treated as things you are likely to inspect or tune: tap the automation card to open Home Assistant's editor, use the dedicated enable/disable switch when you want to pause or resume it, and use the three-dot button for More Info. Other device types still open Home Assistant's More Info dialog rather than guessing a command that could be inappropriate for the device.
+Roomboard reads the Areas, devices and entities you already have, then turns them into a responsive dashboard with one view per room. It prefers everyday controls, keeps technical noise out of the way, and refreshes itself when your Home Assistant setup changes.
 
-## Requirements
+## Start here
 
-- Home Assistant 2026.5 or newer is recommended. Community dashboard strategy discovery was added in Home Assistant 2026.5.
-- HACS is recommended for installation.
+**Already using HACS?** Use the **Open in HACS** button above, add HA Roomboard as a **Dashboard** repository, download it, then go to **Settings → Dashboards → Add dashboard → Community dashboards**.
 
-## Install with HACS
+Choose the version you prefer:
 
-Until HA Roomboard is accepted into the default HACS catalogue, add it as a custom repository:
-
-1. Open HACS in Home Assistant.
-2. Open the three-dot menu and choose **Custom repositories**.
-3. Add `https://github.com/ArrowSK/ha-roomboard`.
-4. Select **Dashboard** as the category.
-5. Install **HA Roomboard**.
-6. Reload the Home Assistant frontend if HACS asks you to.
-7. Go to **Settings → Dashboards → Add dashboard**.
-8. Under **Community dashboards**, choose one of:
-   - **HA Roomboard** — follows the Home Assistant/system appearance.
-   - **HA Roomboard Light** — fixed high-contrast light palette.
-   - **HA Roomboard Dark** — fixed high-contrast dark palette.
+- **HA Roomboard** — follows your Home Assistant/system appearance.
+- **HA Roomboard Light** — fixed accessible light palette.
+- **HA Roomboard Dark** — fixed accessible dark palette.
 
 No YAML is required for the default setup.
 
-If the strategies do not appear in the Add dashboard dialog, confirm that the HACS resource is present under **Settings → Dashboards → Resources**, then refresh the browser.
+## What you get
 
-## Automatic selection and live refresh
+| | |
+|---|---|
+| **Automatic rooms** | One generated dashboard view per populated Home Assistant Area. |
+| **Live discovery** | New or migrated entities in existing Areas are picked up while Roomboard is open, with a periodic fallback refresh. |
+| **Cleaner rooms** | Diagnostic, configuration, disabled and hidden entities are filtered by default. Unavailable devices are moved out of the main grid. |
+| **Useful summaries** | Temperature, humidity, CO₂ and presence are promoted when suitable available sensors exist. |
+| **Smart device tiles** | Lights, switches, climate, fans, covers, media, cameras and more use a consistent room-first presentation. |
+| **Scenes & automations** | Global Home sections make common actions easy to find without assigning everything to an Area. |
+| **Assist** | A prominent native Home Assistant Assist launcher is available from the Home view. |
+| **Readable by design** | Wrapped names, accessible contrast, visible keyboard focus, larger supporting text and 44 px interaction targets where applicable. |
+| **No card stack required** | Roomboard does not require Mushroom, Bubble Card, card-mod or another Lovelace card package to work. |
 
-Roomboard treats Home Assistant's Area assignment as the source of truth for room membership. An entity belongs to a room when either:
+## The interaction model
 
-- the entity itself is assigned to that Area; or
-- the entity has no Area override and its parent device belongs to that Area.
+Roomboard tries to make the obvious tap do the obvious thing.
 
-The default filter then removes registry entries that are disabled, hidden, configuration-only, or diagnostic. Common administrative domains such as updates, people, trackers, selectors, numbers, and timers are also omitted unless explicitly included.
+**Lights, switches, fans and input booleans** toggle directly. **Scenes** run immediately. Device types where a blind command would be risky or ambiguous open Home Assistant's More Info dialog instead.
 
-Roomboard is intentionally selective with sensors. Temperature, humidity, CO₂, illuminance, air-quality, particulate, pressure, VOC, occupancy, motion, door/window, moisture, smoke, gas, safety, and problem sensors are treated as useful room information. Power, energy, battery, current, and voltage are normally shown as secondary metrics attached to the corresponding device.
+Automations deliberately have three separate actions:
 
-While a Roomboard view is open, it listens for Home Assistant registry update events and re-runs discovery for that room. A 60-second periodic refresh is also used as a fallback. Newly created or migrated entities in an existing Area can therefore appear without rebuilding the dashboard. New scenes and automations also refresh on the Home view. A completely new Area still needs the dashboard strategy itself to regenerate so Home Assistant can create a new view; reloading the dashboard after such a change is sufficient.
+1. **Tap the automation card → Edit.** Roomboard opens Home Assistant's native automation editor. If the automation exposes an `id`, it uses `/config/automation/edit/<id>`; otherwise it falls back to the Home Assistant automation details page.
+2. **Use the toggle button → Enable / disable.** This pauses or resumes the automation; it does not run the automation's actions.
+3. **Use `•••` → More Info.**
+
+The same interaction applies to automations shown inside individual room views.
+
+## How Roomboard decides what belongs in a room
+
+Home Assistant's Area assignment is the source of truth. An entity belongs to a room when either the entity itself is assigned to that Area, or its parent device belongs to that Area and the entity has no Area override.
+
+Roomboard then applies a deliberately conservative cleanup pass. It removes disabled, hidden, configuration-only and diagnostic registry entries, excludes common administrative domains, and avoids promoting every sensor into its own tile.
+
+Useful environmental and safety classes such as temperature, humidity, CO₂, illuminance, air quality, particulate matter, pressure, VOC, occupancy, motion, door/window, moisture, smoke, gas, safety and problem sensors can remain visible. Power, energy, battery, current and voltage readings are normally attached to the corresponding device as secondary information instead of becoming separate cards.
+
+Obvious same-domain, same-name duplicates are collapsed with preference given to the available entity.
+
+## Unavailable devices stay available — just not in your way
+
+The default is:
+
+```yaml
+unavailable_mode: collapse
+```
+
+Available entities remain in the normal room grid. `unknown` and `unavailable` entities move below the main content into a collapsed **Unavailable devices** section.
+
+Other choices are:
+
+```yaml
+unavailable_mode: show
+```
+
+or:
+
+```yaml
+unavailable_mode: hide
+```
+
+This keeps a temporarily broken device inspectable without letting stale entities dominate the dashboard.
 
 ## Scenes and automations
 
-The Home view has dedicated **Scenes** and **Automations** sections. These are global and do not require the entity to be assigned to an Area.
+The Home view automatically includes available non-hidden scenes and automations, including ones that are not assigned to an Area.
 
-- Tap a scene to run it with `scene.turn_on`.
-- Tap the body of an automation card to open Home Assistant's native automation editor. If the entity exposes an automation `id`, Roomboard opens `/config/automation/edit/<id>`; otherwise it falls back to Home Assistant's `/config/automation/show/<entity_id>` page.
-- Use the dedicated switch button on the automation card to enable or disable it. This never runs the automation's actions.
-- Use the three-dot button for Home Assistant More Info.
-- The same interaction model is used for Area-assigned automations inside room views.
+Set either option to `false` if you do not want the corresponding global section:
 
-An automation is usually something you want to understand before changing. Separating **edit**, **enable/disable**, and **More Info** makes the dashboard faster to read and much harder to mis-tap.
+```yaml
+show_scenes: false
+show_automations: false
+```
 
-Set `show_scenes: false` or `show_automations: false` if you do not want one of the global sections.
+Area-assigned scenes and automations can also appear naturally inside their room.
 
 ## Assist
 
-The Home view includes a prominent **Assist** launcher. It uses Home Assistant's native dashboard `assist` action rather than directly calling a conversation service.
+Roomboard uses Home Assistant's native dashboard `assist` action rather than calling a conversation service directly.
 
-By default it uses the user's preferred Assist pipeline and starts listening immediately. Advanced configuration can change this:
+The default is to use the preferred Assist pipeline and start listening immediately:
 
 ```yaml
 assist_pipeline: preferred
 assist_start_listening: true
 ```
 
-Set `assist_start_listening: false` if you prefer the Assist dialog to open without immediately using the microphone.
+Set `assist_start_listening: false` if you prefer Assist to open without immediately activating the microphone.
 
-## Light and dark variants
+## Light, Dark and System appearance
 
-HA Roomboard registers three Community dashboard strategies:
+Roomboard registers three Community dashboard strategies:
 
-- `custom:ha-roomboard` — system/Home Assistant appearance.
-- `custom:ha-roomboard-light` — fixed light palette.
-- `custom:ha-roomboard-dark` — fixed dark palette.
+```text
+custom:ha-roomboard
+custom:ha-roomboard-light
+custom:ha-roomboard-dark
+```
 
-The Light and Dark variants intentionally define their own background, card, text, muted-text, divider, and accent colors so readability does not depend on the user's Home Assistant theme. Existing HA Roomboard dashboards continue to work unchanged.
+The Light and Dark variants define their own background, card, text, muted-text, divider and accent colours so readability does not depend on a third-party Home Assistant theme. The base Roomboard strategy follows Home Assistant.
 
-Advanced users using the base strategy can also set:
+Advanced users can also set the base strategy explicitly:
 
 ```yaml
 appearance: light
@@ -116,91 +146,99 @@ Accepted values are `system`, `light`, and `dark`.
 
 ## Accessibility and readability
 
-Roomboard's fixed Light and Dark palettes are designed around WCAG 2.2 AA normal-text contrast targets. Everyday entity names use 16 px-equivalent text; supporting text and metrics use at least 14 px-equivalent text with increased line-height. Long names wrap instead of being truncated.
+Roomboard's fixed Light and Dark palettes are designed around WCAG 2.2 AA normal-text contrast targets. Everyday entity names use 16 px-equivalent text and supporting text uses at least 14 px-equivalent text with increased line-height.
 
-Interactive controls use visible keyboard focus outlines and a minimum 44 px touch target where applicable. Reduced-motion preferences are respected. Unavailable devices are no longer faded to the point that their text becomes difficult to read when their collapsed section is opened.
+Long names wrap instead of being silently truncated. Keyboard focus is visible, reduced-motion preferences are respected, and important touch controls use 44 px targets where practical.
 
-See [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for the tested palette contrast values and implementation rules.
+Detailed contrast measurements and implementation rules are in [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md).
 
-## Unavailable entities
+## Fine-tuning discovery
 
-The default is `unavailable_mode: collapse`. Available entities stay in the normal room grid. Unavailable and unknown entities move below a separator into a collapsed **Unavailable devices** section, so stale entities do not dominate the dashboard but are still inspectable.
-
-Other modes are available:
-
-- `collapse` — default; keep them at the bottom and collapsed.
-- `show` — keep them at the bottom, expanded under a separator.
-- `hide` — do not render them.
-
-## Room icons
-
-Roomboard first tries to infer a meaningful icon from the Area name, with rules for bedrooms, bathrooms, kitchens, halls/entries, living rooms, outside/gardens/balconies, basements, offices, dining rooms, laundry/utility rooms, garages, attics, storage, workshops, gyms, stairs, media rooms, pools and other common spaces. It then falls back to a pool of neutral room icons. Icons are allocated uniquely within the generated dashboard so the top navigation does not become a row of identical houses.
-
-## Optional strategy configuration
-
-The default dashboard needs no configuration. Advanced users can use these strategy keys:
+Automatic discovery is the default, but you can override it when your installation has an unusual entity that Roomboard cannot infer correctly.
 
 ```yaml
 strategy:
   type: custom:ha-roomboard
-  title: My Home
-  appearance: system
   include_areas:
-    - Living Room
-    - bedroom
+    - Bedroom
+    - Main Room
   exclude_areas:
-    - Garage
+    - Test Lab
+  include_entities:
+    - sensor.special_room_status
+  exclude_entities:
+    - switch.debug_relay
   room_order:
-    - Living Room
+    - Main Room
     - Kitchen
     - Bedroom
-  include_entities:
-    - button.bedroom_fan_power_on
-  exclude_entities:
-    - switch.router
-  show_empty_areas: false
-  show_scenes: true
-  show_automations: true
   unavailable_mode: collapse
-  refresh_interval: 60
   deduplicate: true
-  assist_pipeline: preferred
-  assist_start_listening: true
 ```
 
-Area selectors accept either the Area ID or the Area name. Entity selectors use the full Home Assistant entity ID.
+Area selectors can use either the Home Assistant Area ID or the displayed Area name. Entity overrides use full entity IDs.
 
-`include_entities` is an override: it can expose an entity that Roomboard would normally suppress, provided that entity belongs to the generated Area. This is useful for unusual but intentional controls such as IR buttons. `exclude_entities` always wins over automatic discovery and also removes matching scenes/automations from the global Home sections.
+## Installation
 
-`refresh_interval` is the fallback registry refresh interval in seconds and is clamped to a minimum of 30 seconds. Registry events normally trigger an earlier refresh. `deduplicate` defaults to `true`; set it to `false` if you intentionally keep multiple same-named entities of the same domain in one Area.
+### HACS — recommended
 
-## Design and legal independence
+Use the button at the top of this README, or add the repository manually:
 
-HA Roomboard is an independent Home Assistant community project. It is not a skin, fork, or redistribution of any commercial smart-home application.
+1. Open **HACS**.
+2. Open the **⋮** menu → **Custom repositories**.
+3. Add `https://github.com/ArrowSK/ha-roomboard`.
+4. Select **Dashboard**.
+5. Download **HA Roomboard**.
+6. Refresh the Home Assistant frontend if HACS asks you to.
+7. Open **Settings → Dashboards → Add dashboard** and select a Roomboard strategy under **Community dashboards**.
 
-The project does not contain third-party application code, extracted artwork, logos, screenshots, fonts, proprietary icon sets, copied stylesheets, or decompiled resources. Its room navigation, responsive tiles, device grouping, compact controls, scene/automation presentation, and Assist launcher are independently implemented from general interface patterns and Home Assistant APIs.
+If Roomboard does not appear under Community dashboards, confirm the resource exists under **Settings → Dashboards → Resources**, then hard-refresh the browser.
 
-The HA Roomboard icon is original project artwork and is not derived from Tuya, Smart Life, or Home Assistant branding.
+### Manual resource installation
 
-See [docs/LEGAL.md](docs/LEGAL.md) for the contributor rules that keep this separation explicit.
+HACS is strongly recommended. For manual use, copy `dist/ha-roomboard.js` into a Home Assistant web-accessible directory and register it as a JavaScript module under **Settings → Dashboards → Resources**.
+
+## HACS icon and branding
+
+The repository contains its own independent Roomboard icon in `assets/icon.png` and conventional root-level `icon.png` / `dark_icon.png` assets for repository and HACS-facing branding. The artwork is original to this project and does not use Tuya or Smart Life artwork.
+
+There is an upstream HACS limitation affecting icon resolution for some custom repositories in current HACS 2.0.5 builds. If HACS still shows a generic placeholder after redownloading, that does **not** mean the Roomboard icon is missing from this repository; HACS's current custom-repository icon path can be the limiting layer. The README and GitHub repository will still use the project icon directly.
+
+## Requirements
+
+- Home Assistant **2026.5 or newer**.
+- A modern browser supported by current Home Assistant.
+- HACS is recommended for installation and updates.
+
+## Privacy and architecture
+
+Roomboard is frontend-only. It does not introduce a separate server, cloud account or analytics service. Discovery is performed against Home Assistant's own registry/state APIs available to the logged-in frontend session.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the implementation model.
+
+## Independent project — not a Tuya clone
+
+HA Roomboard is an independent open-source Home Assistant project. It borrows general room-first smart-home interaction ideas, not Tuya intellectual property.
+
+The repository intentionally does **not** contain Tuya or Smart Life logos, icons, screenshots, fonts, CSS, source code, extracted resources or copied visual assets. Contributors are asked to keep it that way. See [docs/LEGAL.md](docs/LEGAL.md).
 
 ## Development
 
-The distributed plugin is `dist/ha-roomboard.js`. There is intentionally no runtime build chain in the early releases; keeping the shipped module readable makes compatibility debugging easier.
+The distributed frontend is `dist/ha-roomboard.js`.
 
-Local validation:
+Run the local checks with:
 
 ```bash
-npm run check
+npm test
 ```
 
-GitHub Actions runs both the repository checks and the official HACS validation action.
+GitHub Actions also runs JavaScript/behaviour validation and the official HACS validation workflow on changes.
 
-Architecture details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Project status
 
-## Status
+Roomboard is still young and is being tested against real Home Assistant installations with large, messy entity registries. That is intentional: the goal is not a perfect demo dashboard, but a dashboard that remains pleasant when a smart home has accumulated years of devices, migrations and integrations.
 
-The project is still pre-1.0 and is being tested against real, mixed Home Assistant installations. Please report misclassified entities with the entity domain, device class, registry category, and Area assignment; do not post secrets or private Home Assistant URLs.
+Issues and focused improvement ideas are welcome.
 
 ## License
 

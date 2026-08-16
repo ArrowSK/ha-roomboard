@@ -2,6 +2,13 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## Unreleased
+
+- Rework the GitHub front page around a shorter, clearer quick-start flow, one-click HACS entry, feature overview, interaction model, accessibility notes and advanced configuration.
+- Add conventional root-level Roomboard icon assets for repository/HACS-facing branding while keeping the existing original artwork under `assets/`.
+- Declare Home Assistant 2026.5.0 as the minimum supported version in `hacs.json`, matching the documented Community dashboard strategy requirement.
+- Add a transparent note about the current upstream HACS 2.0.5 custom-repository icon limitation so a placeholder is not mistaken for a missing project asset.
+
 ## 0.3.1 - 2026-08-16
 
 - Make the automation card itself an **edit** action, matching the way people naturally open an automation to inspect or change it.
