@@ -2,6 +2,20 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## 0.3.0 - 2026-08-16
+
+- Add global Home sections for Home Assistant scenes and automations, including entities that are not assigned to an Area.
+- Make scene tiles run the scene and automation tiles toggle whether the automation is enabled; More Info remains available separately.
+- Allow Area-assigned automations to appear as ordinary room tiles alongside Area-assigned scenes.
+- Add a prominent one-tap Home Assistant Assist launcher using the native dashboard `assist` action, with preferred-pipeline and start-listening options.
+- Register explicit **HA Roomboard Light** and **HA Roomboard Dark** Community dashboard strategies while preserving the existing system-theme strategy.
+- Add fixed high-contrast Light and Dark palettes designed around WCAG 2.2 AA normal-text contrast targets.
+- Raise supporting typography to at least 14 px-equivalent, preserve 16 px-equivalent entity names, increase line-height, and keep long names wrapping.
+- Add visible keyboard focus outlines, 44 px interaction targets where applicable, and reduced-motion handling.
+- Increase unavailable-tile legibility when the collapsed unavailable section is opened.
+- Add accessibility documentation with measured palette contrast values.
+- Extend behavior and repository validation for scenes, automations, Assist, Light/Dark strategies, and accessibility markers.
+
 ## 0.2.1 - 2026-08-14
 
 - Increase the minimum desktop tile width so real-world entity names have more room before wrapping.
