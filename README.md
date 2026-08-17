@@ -148,7 +148,7 @@ Accepted values are `system`, `light`, and `dark`.
 
 Roomboard's fixed Light and Dark palettes are designed around WCAG 2.2 AA normal-text contrast targets. Everyday entity names use 16 px-equivalent text and supporting text uses at least 14 px-equivalent text with increased line-height.
 
-Long names wrap instead of being silently truncated. Keyboard focus is visible, reduced-motion preferences are respected, and important touch controls use 44 px targets where practical.
+Long names wrap instead of being silently truncated. Interactive controls use visible keyboard focus outlines and a minimum 44 px touch target where applicable. Reduced-motion preferences are respected.
 
 Detailed contrast measurements and implementation rules are in [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md).
 
