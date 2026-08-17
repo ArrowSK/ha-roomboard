@@ -1,0 +1,295 @@
+name: Apply Roomboard 0.4.0 UX fixes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/roomboard-0.4.0-fixes.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply focused mobile, classification, and release fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"Expected block not found: {label}")
+              return text.replace(old, new)
+
+          js_path = Path("dist/ha-roomboard.js")
+          js = js_path.read_text(encoding="utf-8")
+          js = replace(js, 'const ROOMBOARD_VERSION = "0.3.1";', 'const ROOMBOARD_VERSION = "0.4.0";', "runtime version")
+
+          js = replace(
+              js,
+              '''function isExplicitlyIncluded(entityId, includeEntities) {\n  return includeEntities.has(entityId);\n}\n\nfunction isCandidateEntity(entry, stateObj, includeEntities, excludeEntities) {''',
+              '''function isExplicitlyIncluded(entityId, includeEntities) {\n  return includeEntities.has(entityId);\n}\n\nfunction isAdaptiveLightingManagementEntity(entityId) {\n  return String(entityId || "").startsWith("switch.adaptive_lighting_");\n}\n\nfunction isCandidateEntity(entry, stateObj, includeEntities, excludeEntities) {''',
+              "adaptive lighting helper",
+          )
+          js = replace(
+              js,
+              '''  if (!entityId || excludeEntities.has(entityId)) return false;\n  if (isExplicitlyIncluded(entityId, includeEntities)) return true;\n  if (entry.disabled_by || entry.hidden_by) return false;''',
+              '''  if (!entityId || excludeEntities.has(entityId)) return false;\n  if (isExplicitlyIncluded(entityId, includeEntities)) return true;\n  if (isAdaptiveLightingManagementEntity(entityId)) return false;\n  if (entry.disabled_by || entry.hidden_by) return false;''',
+              "adaptive lighting everyday filter",
+          )
+
+          js = replace(
+              js,
+              '''  let items = [];\n  for (const entry of roomEntries) {''',
+              '''  const managementItems = [];\n  for (const entry of roomEntries) {\n    const stateObj = hass.states[entry.entity_id];\n    if (!isAdaptiveLightingManagementEntity(entry.entity_id)) continue;\n    if (isExplicitlyIncluded(entry.entity_id, options.includeEntities)) continue;\n    if (options.excludeEntities.has(entry.entity_id)) continue;\n    if (entry.disabled_by || entry.hidden_by) continue;\n    if (entry.entity_category === "config" || entry.entity_category === "diagnostic") continue;\n    if (!stateObj) continue;\n    const device = deviceMap.get(entry.device_id);\n    managementItems.push({\n      entity_id: entry.entity_id,\n      name: friendlyName(entry, stateObj, device),\n      device_name: deviceName(device),\n      domain: domainOf(entry.entity_id),\n      device_class: stateDeviceClass(stateObj),\n      explicit: false,\n      secondary: [],\n    });\n  }\n  managementItems.sort((a, b) => a.name.localeCompare(b.name));\n\n  let items = [];\n  for (const entry of roomEntries) {''',
+              "management item collection",
+          )
+          js = replace(
+              js,
+              '''    items,\n    summary_candidates: summaryCandidates,''',
+              '''    items,\n    management_items: managementItems,\n    summary_candidates: summaryCandidates,''',
+              "management items return",
+          )
+
+          js = replace(
+              js,
+              '''    this._registryUnsubs = [];\n    this._refreshDebounce = undefined;\n  }\n\n  set hass(hass) {\n    this._hass = hass;\n    this.ensureLiveDiscovery();\n    this.render();\n  }''',
+              '''    this._registryUnsubs = [];\n    this._refreshDebounce = undefined;\n    this._navScrollLeft = 0;\n  }\n\n  set hass(hass) {\n    this.captureNavScroll();\n    this._hass = hass;\n    this.ensureLiveDiscovery();\n    this.render();\n    this.restoreNavScroll();\n  }''',
+              "preserve nav scroll on hass updates",
+          )
+          js = replace(
+              js,
+              '''      const discovery = await discoverDashboard(this._config.discovery_config, this._hass);\n      this.applyDiscovery(discovery);\n      this.render();''',
+              '''      const discovery = await discoverDashboard(this._config.discovery_config, this._hass);\n      this.captureNavScroll();\n      this.applyDiscovery(discovery);\n      this.render();\n      this.restoreNavScroll();''',
+              "preserve nav scroll on discovery refresh",
+          )
+          js = replace(
+              js,
+              '''  applyDiscovery(_discovery) {}\n\n  navHtml(nav, currentPath) {''',
+              '''  applyDiscovery(_discovery) {}\n\n  captureNavScroll() {\n    const nav = this.shadowRoot?.querySelector?.(".nav-scroll");\n    if (nav) this._navScrollLeft = nav.scrollLeft || 0;\n  }\n\n  restoreNavScroll() {\n    const nav = this.shadowRoot?.querySelector?.(".nav-scroll");\n    if (!nav) return;\n    const maxScrollLeft = Math.max(0, (nav.scrollWidth || 0) - (nav.clientWidth || 0));\n    nav.scrollLeft = Math.min(this._navScrollLeft || 0, maxScrollLeft);\n    nav.addEventListener(\n      "scroll",\n      () => { this._navScrollLeft = nav.scrollLeft || 0; },\n      { passive: true },\n    );\n  }\n\n  navHtml(nav, currentPath) {''',
+              "nav scroll state helpers",
+          )
+          js = replace(
+              js,
+              '''      .nav-scroll {\n        display: flex;\n        gap: 8px;\n        overflow-x: auto;\n        scrollbar-width: none;\n        padding: 2px;\n      }''',
+              '''      .nav-scroll {\n        display: flex;\n        gap: 8px;\n        max-width: 100%;\n        overflow-x: auto;\n        overflow-y: hidden;\n        overscroll-behavior-x: contain;\n        scroll-snap-type: none;\n        scroll-behavior: auto;\n        -webkit-overflow-scrolling: touch;\n        touch-action: pan-x pan-y;\n        scrollbar-width: none;\n        padding: 2px 10px 2px 2px;\n      }''',
+              "mobile nav scrolling",
+          )
+
+          js = replace(
+              js,
+              '''          overflow: hidden;\n          transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;\n        }\n        .tile:hover { transform: translateY(-1px); }''',
+              '''          overflow: hidden;\n          transition: none;\n        }''',
+              "remove tile wobble animation",
+          )
+
+          js = replace(js, '''          gap: 4px;\n          margin-left: auto;\n        }\n        .more {\n          width: 44px;\n          height: 44px;''', '''          gap: 12px;\n          margin-left: auto;\n        }\n        .more {\n          width: 52px;\n          height: 48px;''', "room control spacing")
+          js = replace(
+              js,
+              '''          letter-spacing: 1px;\n        }\n        .more:hover''',
+              '''          letter-spacing: 1px;\n          display: inline-flex;\n          align-items: center;\n          justify-content: center;\n          touch-action: manipulation;\n        }\n        .more ha-icon { --mdc-icon-size: 27px; }\n        .more:hover''',
+              "room more target",
+          )
+          js = replace(
+              js,
+              '''          .tile-footer { min-height: 46px; padding-left: 11px; }\n          .metrics { font-size: 0.875rem; gap: 4px 7px; }''',
+              '''          .tile-footer { min-height: 52px; padding: 4px 6px 6px 11px; }\n          .tile-actions { gap: 12px; }\n          .more { width: 54px; height: 50px; }\n          .metrics { font-size: 0.875rem; gap: 4px 7px; }''',
+              "mobile more target",
+          )
+          js = replace(js, '>•••</button>', '><ha-icon icon="mdi:dots-horizontal"></ha-icon></button>', "more icons")
+
+          js = replace(
+              js,
+              '''        .action-card {\n          min-height: 104px;\n          display: grid;\n          grid-template-columns: minmax(0, 1fr) 48px;''',
+              '''        .action-card {\n          min-height: 104px;\n          display: grid;\n          grid-template-columns: minmax(0, 1fr) 60px;''',
+              "overview action control column",
+          )
+          js = replace(
+              js,
+              '''          justify-content: flex-end;\n          gap: 2px;\n          padding: 4px 0 6px;''',
+              '''          justify-content: flex-end;\n          gap: 8px;\n          padding: 6px 4px 8px;''',
+              "overview control separation",
+          )
+          js = replace(
+              js,
+              '''        .action-more {\n          width: 44px;\n          min-height: 44px;''',
+              '''        .action-more {\n          width: 52px;\n          min-height: 48px;''',
+              "overview more target",
+          )
+          js = replace(
+              js,
+              '''          font-weight: 700;\n        }\n        .action-more:hover''',
+              '''          font-weight: 700;\n          display: inline-flex;\n          align-items: center;\n          justify-content: center;\n          touch-action: manipulation;\n        }\n        .action-more ha-icon { --mdc-icon-size: 27px; }\n        .action-more:hover''',
+              "overview more icon sizing",
+          )
+
+          js = replace(
+              js,
+              '''      button.addEventListener("click", (event) => {\n        const target = event.currentTarget;''',
+              '''      button.addEventListener("click", (event) => {\n        event.stopPropagation();\n        const target = event.currentTarget;''',
+              "stop action button propagation",
+          )
+          js = replace(
+              js,
+              '''      button.addEventListener("click", (event) => {\n        const entityId = event.currentTarget.dataset.automationToggle;''',
+              '''      button.addEventListener("click", (event) => {\n        event.stopPropagation();\n        const entityId = event.currentTarget.dataset.automationToggle;''',
+              "stop automation toggle propagation",
+          )
+
+          js = replace(
+              js,
+              '''  constructor() {\n    super();\n    this._unavailableOpen = false;\n  }''',
+              '''  constructor() {\n    super();\n    this._unavailableOpen = false;\n    this._advancedOpen = false;\n  }''',
+              "advanced section state",
+          )
+          js = replace(
+              js,
+              '''    const availableItems = room.items.filter((item) => !isUnavailableState(this._hass.states[item.entity_id]));\n    const unavailableItems = room.items.filter((item) => isUnavailableState(this._hass.states[item.entity_id]));\n    const availableTiles = availableItems.map((item) => this.tileHtml(item)).join("");\n    const unavailableTiles = unavailableItems.map((item) => this.tileHtml(item)).join("");\n\n    let unavailableSection = "";''',
+              '''    const availableItems = room.items.filter((item) => !isUnavailableState(this._hass.states[item.entity_id]));\n    const unavailableItems = room.items.filter((item) => isUnavailableState(this._hass.states[item.entity_id]));\n    const managementItems = asArray(room.management_items).filter((item) => !isUnavailableState(this._hass.states[item.entity_id]));\n    const availableTiles = availableItems.map((item) => this.tileHtml(item)).join("");\n    const unavailableTiles = unavailableItems.map((item) => this.tileHtml(item)).join("");\n    const managementTiles = managementItems.map((item) => this.tileHtml(item)).join("");\n\n    const managementSection = managementItems.length\n      ? `<details class="advanced-section" ${this._advancedOpen ? "open" : ""}>\n          <summary tabindex="0">\n            <span>Lighting automation controls</span>\n            <span>${managementItems.length}</span>\n          </summary>\n          <div class="grid advanced-grid">${managementTiles}</div>\n        </details>`\n      : "";\n\n    let unavailableSection = "";''',
+              "advanced controls render",
+          )
+          js = replace(
+              js,
+              '''        .section-divider,\n        .unavailable-section {\n          max-width: 1440px;\n          margin: 24px auto 12px;\n        }''',
+              '''        .section-divider,\n        .advanced-section,\n        .unavailable-section {\n          max-width: 1440px;\n          margin: 24px auto 12px;\n        }''',
+              "advanced section layout",
+          )
+          js = replace(
+              js,
+              '''        .unavailable-section {\n          border-top: 1px solid var(--divider-color);\n          padding-top: 10px;\n        }\n        .unavailable-section summary {''',
+              '''        .advanced-section,\n        .unavailable-section {\n          border-top: 1px solid var(--divider-color);\n          padding-top: 10px;\n        }\n        .advanced-section summary,\n        .unavailable-section summary {''',
+              "advanced summary style",
+          )
+          js = replace(
+              js,
+              '''        .unavailable-section summary::-webkit-details-marker { display: none; }\n        .unavailable-grid { margin-top: 10px; }''',
+              '''        .advanced-section summary::-webkit-details-marker,\n        .unavailable-section summary::-webkit-details-marker { display: none; }\n        .advanced-grid, .unavailable-grid { margin-top: 10px; }''',
+              "advanced details marker",
+          )
+          js = replace(
+              js,
+              '''        ${availableTiles ? `<main class="grid">${availableTiles}</main>` : `<div class="empty">No available everyday entities are currently active in this area.</div>`}\n        ${unavailableSection}''',
+              '''        ${availableTiles ? `<main class="grid">${availableTiles}</main>` : `<div class="empty">No available everyday entities are currently active in this area.</div>`}\n        ${managementSection}\n        ${unavailableSection}''',
+              "insert advanced controls section",
+          )
+          js = replace(
+              js,
+              '''    const details = this.shadowRoot.querySelector("details.unavailable-section");\n    if (details) {\n      details.addEventListener("toggle", () => {\n        this._unavailableOpen = details.open;\n      });\n    }''',
+              '''    const advanced = this.shadowRoot.querySelector("details.advanced-section");\n    if (advanced) {\n      advanced.addEventListener("toggle", () => {\n        this._advancedOpen = advanced.open;\n      });\n    }\n    const details = this.shadowRoot.querySelector("details.unavailable-section");\n    if (details) {\n      details.addEventListener("toggle", () => {\n        this._unavailableOpen = details.open;\n      });\n    }''',
+              "advanced section binding",
+          )
+
+          if "translateY(" in js:
+              raise SystemExit("Card movement animation still present after patch")
+          js_path.write_text(js, encoding="utf-8")
+
+          pkg_path = Path("package.json")
+          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+          pkg["version"] = "0.4.0"
+          pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
+
+          test_path = Path("scripts/behavior.test.mjs")
+          test = test_path.read_text(encoding="utf-8")
+          test = replace(
+              test,
+              '''  { id: "bedroom_climate", area_id: "bedroom", name: "Bedroom Climate" },\n);''',
+              '''  { id: "bedroom_climate", area_id: "bedroom", name: "Bedroom Climate" },\n  { id: "bedroom_adaptive", area_id: "bedroom", name: "Bedroom Adaptive Lighting" },\n);''',
+              "adaptive test device",
+          )
+          test = replace(
+              test,
+              '''  { entity_id: "automation.bedroom_night_mode", area_id: "bedroom", name: "Bedroom Night Mode" },''',
+              '''  { entity_id: "automation.bedroom_night_mode", area_id: "bedroom", name: "Bedroom Night Mode" },\n  { entity_id: "switch.adaptive_lighting_bedroom", device_id: "bedroom_adaptive", name: "Adaptive Lighting Bedroom" },''',
+              "adaptive test entity",
+          )
+          test = replace(
+              test,
+              '''  "automation.bedroom_night_mode": {\n    state: "on",\n    attributes: { friendly_name: "Bedroom Night Mode" },\n  },''',
+              '''  "automation.bedroom_night_mode": {\n    state: "on",\n    attributes: { friendly_name: "Bedroom Night Mode" },\n  },\n  "switch.adaptive_lighting_bedroom": {\n    state: "on",\n    attributes: { friendly_name: "Adaptive Lighting Bedroom" },\n  },''',
+              "adaptive test state",
+          )
+          test = replace(
+              test,
+              '''assert.ok(\n  bedroomEntities.includes("automation.bedroom_night_mode"),\n  "area-assigned automations should appear as normal room tiles",\n);''',
+              '''assert.ok(\n  bedroomEntities.includes("automation.bedroom_night_mode"),\n  "area-assigned automations should appear as normal room tiles",\n);\nassert.ok(\n  !bedroomEntities.includes("switch.adaptive_lighting_bedroom"),\n  "Adaptive Lighting management switches must not appear as ordinary room device controls",\n);\nassert.ok(\n  bedroomConfig.room.management_items.some((item) => item.entity_id === "switch.adaptive_lighting_bedroom"),\n  "Adaptive Lighting management switches should remain available in the advanced controls section",\n);''',
+              "adaptive classification assertions",
+          )
+          test = replace(
+              test,
+              '''assert.match(roomCard.shadowRoot.innerHTML, /min-height: 44px/);''',
+              '''assert.match(roomCard.shadowRoot.innerHTML, /min-height: 44px/);\nassert.match(roomCard.shadowRoot.innerHTML, /Lighting automation controls/);\nassert.match(roomCard.shadowRoot.innerHTML, /overscroll-behavior-x: contain/);\nassert.match(roomCard.shadowRoot.innerHTML, /width: 52px/);\nassert.match(roomCard.shadowRoot.innerHTML, /mdi:dots-horizontal/);\nassert.doesNotMatch(roomCard.shadowRoot.innerHTML, /translateY\\(/);''',
+              "mobile UX assertions",
+          )
+          test_path.write_text(test, encoding="utf-8")
+
+          validate_path = Path("scripts/validate.mjs")
+          validate = validate_path.read_text(encoding="utf-8")
+          validate = replace(
+              validate,
+              '''  'toggleAutomationEnabled',\n];''',
+              '''  'toggleAutomationEnabled',\n  'isAdaptiveLightingManagementEntity',\n  'switch.adaptive_lighting_',\n  'management_items',\n  'overscroll-behavior-x: contain',\n  'captureNavScroll',\n  'restoreNavScroll',\n  'mdi:dots-horizontal',\n];''',
+              "validation markers",
+          )
+          validate = replace(
+              validate,
+              '''if (/text-overflow:\\s*ellipsis/i.test(source)) {\n  throw new Error("Entity/device text must not regress to ellipsis-based truncation");\n}''',
+              '''if (/text-overflow:\\s*ellipsis/i.test(source)) {\n  throw new Error("Entity/device text must not regress to ellipsis-based truncation");\n}\nif (/translateY\\(/.test(source)) {\n  throw new Error("Roomboard cards must remain visually stable and must not move on hover");\n}''',
+              "no movement validation",
+          )
+          validate_path.write_text(validate, encoding="utf-8")
+
+          readme_path = Path("README.md")
+          readme = readme_path.read_text(encoding="utf-8")
+          readme = replace(
+              readme,
+              '''No YAML is required for the default setup.\n\n## What you get''',
+              '''No YAML is required for the default setup.\n\n## Updates\n\nHA Roomboard now publishes normal versioned GitHub releases. HACS can therefore treat a new Roomboard version as an update instead of making you redownload the moving `main` branch by hand. After installing a released version, future releases should appear in HACS as pending updates (and in Home Assistant's Updates view when HACS exposes the update entity). If you want HACS to check immediately, use **Update information** for HA Roomboard.\n\n## What you get''',
+              "README updates section",
+          )
+          readme = replace(
+              readme,
+              '''| **Cleaner rooms** | Diagnostic, configuration, disabled and hidden entities are filtered by default. Unavailable devices are moved out of the main grid. |''',
+              '''| **Cleaner rooms** | Diagnostic, configuration, disabled and hidden entities are filtered by default. Unavailable devices are moved out of the main grid, and Adaptive Lighting management switches are kept separate from everyday device controls. |''',
+              "README cleaner rooms",
+          )
+          readme = replace(
+              readme,
+              '''Obvious same-domain, same-name duplicates are collapsed with preference given to the available entity.\n''',
+              '''Obvious same-domain, same-name duplicates are collapsed with preference given to the available entity.\n\nAdaptive Lighting's `switch.adaptive_lighting_*` entities are useful management controls, but they are not lamps. Roomboard therefore keeps them out of the everyday room grid and places available ones in a collapsed **Lighting automation controls** section. An entity named in `include_entities` still overrides that default and can be promoted into the normal grid.\n''',
+              "README adaptive lighting behavior",
+          )
+          readme = replace(
+              readme,
+              '''Interactive controls use visible keyboard focus outlines and a minimum 44 px touch target where applicable.''',
+              '''Interactive controls use visible keyboard focus outlines and a minimum 44 px touch target where applicable. More Info uses a larger, separated touch target on mobile so it is less likely to be confused with a neighbouring automation toggle.''',
+              "README mobile touch behavior",
+          )
+          readme_path.write_text(readme, encoding="utf-8")
+
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text(encoding="utf-8")
+          marker = "All notable changes to HA Roomboard are documented here.\n\n"
+          entry = '''## 0.4.0 - 2026-08-17\n\n- Remove the card lift/hover movement so tiles stay visually stable instead of trembling as states refresh or a pointer moves across them.\n- Preserve the room navbar's horizontal scroll position across Home Assistant state updates and live-discovery rerenders; contain horizontal overscroll so the last rooms remain reachable on touch devices.\n- Enlarge and visually separate More Info controls on mobile, use a proper dots icon, and stop control taps from propagating into neighbouring actions.\n- Treat `switch.adaptive_lighting_*` entities as lighting-management controls rather than ordinary room switches. They now live in a collapsed **Lighting automation controls** section unless explicitly included.\n- Start publishing semantic GitHub releases so HACS can discover Roomboard upgrades as normal versioned updates rather than relying on manual redownloads from `main`.\n- Extend regression tests for stable cards, navbar scrolling, mobile More Info targets, Adaptive Lighting classification, and release/version invariants.\n\n'''
+          if "## 0.4.0" not in changelog:
+              changelog = replace(changelog, marker, marker + entry, "0.4.0 changelog")
+          changelog_path.write_text(changelog, encoding="utf-8")
+          PY
+
+          npm run check
+
+          rm .github/workflows/roomboard-0.4.0-fixes.yml
+          git config user.name "ArrowSK"
+          git config user.email "56678503+ArrowSK@users.noreply.github.com"
+          git add dist/ha-roomboard.js package.json scripts/behavior.test.mjs scripts/validate.mjs README.md CHANGELOG.md .github/workflows/roomboard-0.4.0-fixes.yml
+          git commit -m "fix: stabilize mobile UX and prepare HACS releases"
+          git push origin main
