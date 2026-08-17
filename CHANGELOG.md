@@ -2,6 +2,15 @@
 
 All notable changes to HA Roomboard are documented here.
 
+## 0.4.0 - 2026-08-17
+
+- Remove the card lift/hover movement so tiles stay visually stable instead of trembling as states refresh or a pointer moves across them.
+- Preserve the room navbar's horizontal scroll position across Home Assistant state updates and live-discovery rerenders; contain horizontal overscroll so the last rooms remain reachable on touch devices.
+- Enlarge and visually separate More Info controls on mobile, use a proper dots icon, and stop control taps from propagating into neighbouring actions.
+- Treat `switch.adaptive_lighting_*` entities as lighting-management controls rather than ordinary room switches. They now live in a collapsed **Lighting automation controls** section unless explicitly included.
+- Start publishing semantic GitHub releases so HACS can discover Roomboard upgrades as normal versioned updates rather than relying on manual redownloads from `main`.
+- Extend regression tests for stable cards, navbar scrolling, mobile More Info targets, Adaptive Lighting classification, and release/version invariants.
+
 ## Unreleased
 
 - Rework the GitHub front page around a shorter, clearer quick-start flow, one-click HACS entry, feature overview, interaction model, accessibility notes and advanced configuration.

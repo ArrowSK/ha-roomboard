@@ -36,6 +36,13 @@ const requiredSnippets = [
   '/config/automation/show/',
   'data-automation-toggle',
   'toggleAutomationEnabled',
+  'isAdaptiveLightingManagementEntity',
+  'switch.adaptive_lighting_',
+  'management_items',
+  'overscroll-behavior-x: contain',
+  'captureNavScroll',
+  'restoreNavScroll',
+  'mdi:dots-horizontal',
 ];
 
 for (const snippet of requiredSnippets) {
@@ -55,6 +62,9 @@ if (hacs.filename !== "ha-roomboard.js") throw new Error("HACS filename must mat
 
 if (/text-overflow:\s*ellipsis/i.test(source)) {
   throw new Error("Entity/device text must not regress to ellipsis-based truncation");
+}
+if (/translateY\(/.test(source)) {
+  throw new Error("Roomboard cards must remain visually stable and must not move on hover");
 }
 if (/\.tile\.unavailable\s*\{\s*opacity:\s*0\.[0-5]/i.test(source)) {
   throw new Error("Unavailable tiles must retain readable opacity");

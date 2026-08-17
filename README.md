@@ -36,13 +36,17 @@ Choose the version you prefer:
 
 No YAML is required for the default setup.
 
+## Updates
+
+HA Roomboard now publishes normal versioned GitHub releases. HACS can therefore treat a new Roomboard version as an update instead of making you redownload the moving `main` branch by hand. After installing a released version, future releases should appear in HACS as pending updates (and in Home Assistant's Updates view when HACS exposes the update entity). If you want HACS to check immediately, use **Update information** for HA Roomboard.
+
 ## What you get
 
 | | |
 |---|---|
 | **Automatic rooms** | One generated dashboard view per populated Home Assistant Area. |
 | **Live discovery** | New or migrated entities in existing Areas are picked up while Roomboard is open, with a periodic fallback refresh. |
-| **Cleaner rooms** | Diagnostic, configuration, disabled and hidden entities are filtered by default. Unavailable devices are moved out of the main grid. |
+| **Cleaner rooms** | Diagnostic, configuration, disabled and hidden entities are filtered by default. Unavailable devices are moved out of the main grid, and Adaptive Lighting management switches are kept separate from everyday device controls. |
 | **Useful summaries** | Temperature, humidity, CO₂ and presence are promoted when suitable available sensors exist. |
 | **Smart device tiles** | Lights, switches, climate, fans, covers, media, cameras and more use a consistent room-first presentation. |
 | **Scenes & automations** | Global Home sections make common actions easy to find without assigning everything to an Area. |
@@ -73,6 +77,8 @@ Roomboard then applies a deliberately conservative cleanup pass. It removes disa
 Useful environmental and safety classes such as temperature, humidity, CO₂, illuminance, air quality, particulate matter, pressure, VOC, occupancy, motion, door/window, moisture, smoke, gas, safety and problem sensors can remain visible. Power, energy, battery, current and voltage readings are normally attached to the corresponding device as secondary information instead of becoming separate cards.
 
 Obvious same-domain, same-name duplicates are collapsed with preference given to the available entity.
+
+Adaptive Lighting's `switch.adaptive_lighting_*` entities are useful management controls, but they are not lamps. Roomboard therefore keeps them out of the everyday room grid and places available ones in a collapsed **Lighting automation controls** section. An entity named in `include_entities` still overrides that default and can be promoted into the normal grid.
 
 ## Unavailable devices stay available — just not in your way
 
@@ -148,7 +154,7 @@ Accepted values are `system`, `light`, and `dark`.
 
 Roomboard's fixed Light and Dark palettes are designed around WCAG 2.2 AA normal-text contrast targets. Everyday entity names use 16 px-equivalent text and supporting text uses at least 14 px-equivalent text with increased line-height.
 
-Long names wrap instead of being silently truncated. Interactive controls use visible keyboard focus outlines and a minimum 44 px touch target where applicable. Reduced-motion preferences are respected.
+Long names wrap instead of being silently truncated. Interactive controls use visible keyboard focus outlines and a minimum 44 px touch target where applicable. More Info uses a larger, separated touch target on mobile so it is less likely to be confused with a neighbouring automation toggle. Reduced-motion preferences are respected.
 
 Detailed contrast measurements and implementation rules are in [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md).
 

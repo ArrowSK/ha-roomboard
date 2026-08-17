@@ -76,6 +76,7 @@ devices.push(
   { id: "bedside_live", area_id: "bedroom", name: "Artem Nightstand" },
   { id: "bedside_old", area_id: "bedroom", name: "Artem Nightstand old" },
   { id: "bedroom_climate", area_id: "bedroom", name: "Bedroom Climate" },
+  { id: "bedroom_adaptive", area_id: "bedroom", name: "Bedroom Adaptive Lighting" },
 );
 
 let entities = areas.map((area, index) => ({
@@ -89,6 +90,7 @@ entities = entities.concat([
   { entity_id: "sensor.bedroom_temperature", device_id: "bedroom_climate" },
   { entity_id: "sensor.bedroom_humidity", device_id: "bedroom_climate" },
   { entity_id: "automation.bedroom_night_mode", area_id: "bedroom", name: "Bedroom Night Mode" },
+  { entity_id: "switch.adaptive_lighting_bedroom", device_id: "bedroom_adaptive", name: "Adaptive Lighting Bedroom" },
   { entity_id: "scene.good_night", name: "Good Night" },
   { entity_id: "automation.hall_lights", name: "Hall Lights" },
 ]);
@@ -127,6 +129,10 @@ Object.assign(states, {
   "automation.bedroom_night_mode": {
     state: "on",
     attributes: { friendly_name: "Bedroom Night Mode" },
+  },
+  "switch.adaptive_lighting_bedroom": {
+    state: "on",
+    attributes: { friendly_name: "Adaptive Lighting Bedroom" },
   },
   "scene.good_night": {
     state: "2026-08-16T12:00:00+00:00",
@@ -174,6 +180,14 @@ assert.ok(
   bedroomEntities.includes("automation.bedroom_night_mode"),
   "area-assigned automations should appear as normal room tiles",
 );
+assert.ok(
+  !bedroomEntities.includes("switch.adaptive_lighting_bedroom"),
+  "Adaptive Lighting management switches must not appear as ordinary room device controls",
+);
+assert.ok(
+  bedroomConfig.room.management_items.some((item) => item.entity_id === "switch.adaptive_lighting_bedroom"),
+  "Adaptive Lighting management switches should remain available in the advanced controls section",
+);
 
 const overviewConfig = dashboard.views.find((view) => view.path === "home").cards[0];
 assert.ok(
@@ -203,6 +217,11 @@ assert.doesNotMatch(
 assert.match(roomCard.shadowRoot.innerHTML, /font-size: 0\.875rem/);
 assert.match(roomCard.shadowRoot.innerHTML, /focus-visible/);
 assert.match(roomCard.shadowRoot.innerHTML, /min-height: 44px/);
+assert.match(roomCard.shadowRoot.innerHTML, /Lighting automation controls/);
+assert.match(roomCard.shadowRoot.innerHTML, /overscroll-behavior-x: contain/);
+assert.match(roomCard.shadowRoot.innerHTML, /width: 52px/);
+assert.match(roomCard.shadowRoot.innerHTML, /mdi:dots-horizontal/);
+assert.doesNotMatch(roomCard.shadowRoot.innerHTML, /translateY\(/);
 assert.match(
   roomCard.shadowRoot.innerHTML,
   /href="\/config\/automation\/show\/automation\.bedroom_night_mode"/,

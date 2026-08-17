@@ -1,4 +1,4 @@
-const ROOMBOARD_VERSION = "0.3.1";
+const ROOMBOARD_VERSION = "0.4.0";
 const STRATEGY_TYPE = "ha-roomboard";
 const LIGHT_STRATEGY_TYPE = "ha-roomboard-light";
 const DARK_STRATEGY_TYPE = "ha-roomboard-dark";
@@ -210,10 +210,15 @@ function isExplicitlyIncluded(entityId, includeEntities) {
   return includeEntities.has(entityId);
 }
 
+function isAdaptiveLightingManagementEntity(entityId) {
+  return String(entityId || "").startsWith("switch.adaptive_lighting_");
+}
+
 function isCandidateEntity(entry, stateObj, includeEntities, excludeEntities) {
   const entityId = entry.entity_id;
   if (!entityId || excludeEntities.has(entityId)) return false;
   if (isExplicitlyIncluded(entityId, includeEntities)) return true;
+  if (isAdaptiveLightingManagementEntity(entityId)) return false;
   if (entry.disabled_by || entry.hidden_by) return false;
   if (entry.entity_category === "config" || entry.entity_category === "diagnostic") return false;
   if (!stateObj) return false;
@@ -334,6 +339,28 @@ function buildRoom(area, devices, entities, hass, options) {
     secondaryByDevice.set(entry.device_id, list);
   }
 
+  const managementItems = [];
+  for (const entry of roomEntries) {
+    const stateObj = hass.states[entry.entity_id];
+    if (!isAdaptiveLightingManagementEntity(entry.entity_id)) continue;
+    if (isExplicitlyIncluded(entry.entity_id, options.includeEntities)) continue;
+    if (options.excludeEntities.has(entry.entity_id)) continue;
+    if (entry.disabled_by || entry.hidden_by) continue;
+    if (entry.entity_category === "config" || entry.entity_category === "diagnostic") continue;
+    if (!stateObj) continue;
+    const device = deviceMap.get(entry.device_id);
+    managementItems.push({
+      entity_id: entry.entity_id,
+      name: friendlyName(entry, stateObj, device),
+      device_name: deviceName(device),
+      domain: domainOf(entry.entity_id),
+      device_class: stateDeviceClass(stateObj),
+      explicit: false,
+      secondary: [],
+    });
+  }
+  managementItems.sort((a, b) => a.name.localeCompare(b.name));
+
   let items = [];
   for (const entry of roomEntries) {
     const stateObj = hass.states[entry.entity_id];
@@ -389,6 +416,7 @@ function buildRoom(area, devices, entities, hass, options) {
     icon: area.icon,
     path: area.path,
     items,
+    management_items: managementItems,
     summary_candidates: summaryCandidates,
   };
 }
@@ -681,12 +709,15 @@ class RoomboardBaseCard extends HTMLElement {
     this._refreshing = false;
     this._registryUnsubs = [];
     this._refreshDebounce = undefined;
+    this._navScrollLeft = 0;
   }
 
   set hass(hass) {
+    this.captureNavScroll();
     this._hass = hass;
     this.ensureLiveDiscovery();
     this.render();
+    this.restoreNavScroll();
   }
 
   connectedCallback() {
@@ -740,8 +771,10 @@ class RoomboardBaseCard extends HTMLElement {
     this._refreshing = true;
     try {
       const discovery = await discoverDashboard(this._config.discovery_config, this._hass);
+      this.captureNavScroll();
       this.applyDiscovery(discovery);
       this.render();
+      this.restoreNavScroll();
     } catch (error) {
       console.warn("HA Roomboard live discovery refresh failed", error);
     } finally {
@@ -750,6 +783,23 @@ class RoomboardBaseCard extends HTMLElement {
   }
 
   applyDiscovery(_discovery) {}
+
+  captureNavScroll() {
+    const nav = this.shadowRoot?.querySelector?.(".nav-scroll");
+    if (nav) this._navScrollLeft = nav.scrollLeft || 0;
+  }
+
+  restoreNavScroll() {
+    const nav = this.shadowRoot?.querySelector?.(".nav-scroll");
+    if (!nav) return;
+    const maxScrollLeft = Math.max(0, (nav.scrollWidth || 0) - (nav.clientWidth || 0));
+    nav.scrollLeft = Math.min(this._navScrollLeft || 0, maxScrollLeft);
+    nav.addEventListener(
+      "scroll",
+      () => { this._navScrollLeft = nav.scrollLeft || 0; },
+      { passive: true },
+    );
+  }
 
   navHtml(nav, currentPath) {
     const base = dashboardBasePath();
@@ -860,9 +910,16 @@ class RoomboardBaseCard extends HTMLElement {
       .nav-scroll {
         display: flex;
         gap: 8px;
+        max-width: 100%;
         overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scroll-snap-type: none;
+        scroll-behavior: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y;
         scrollbar-width: none;
-        padding: 2px;
+        padding: 2px 10px 2px 2px;
       }
       .nav-scroll::-webkit-scrollbar { display: none; }
       .nav-item {
@@ -984,6 +1041,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
   constructor() {
     super();
     this._unavailableOpen = false;
+    this._advancedOpen = false;
   }
 
   setConfig(config) {
@@ -1090,7 +1148,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
             ${automationToggle}
             <button class="more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-action="more" data-entity="${escapeHtml(
               item.entity_id,
-            )}">•••</button>
+            )}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button>
           </div>
         </div>
       </article>`;
@@ -1099,6 +1157,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
   bindEvents() {
     this.shadowRoot.querySelectorAll("button[data-entity]").forEach((button) => {
       button.addEventListener("click", (event) => {
+        event.stopPropagation();
         const target = event.currentTarget;
         const entityId = target.dataset.entity;
         if (target.dataset.action === "more") this.showMoreInfo(entityId);
@@ -1107,10 +1166,17 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
     });
     this.shadowRoot.querySelectorAll("button[data-automation-toggle]").forEach((button) => {
       button.addEventListener("click", (event) => {
+        event.stopPropagation();
         const entityId = event.currentTarget.dataset.automationToggle;
         this.toggleAutomationEnabled(entityId);
       });
     });
+    const advanced = this.shadowRoot.querySelector("details.advanced-section");
+    if (advanced) {
+      advanced.addEventListener("toggle", () => {
+        this._advancedOpen = advanced.open;
+      });
+    }
     const details = this.shadowRoot.querySelector("details.unavailable-section");
     if (details) {
       details.addEventListener("toggle", () => {
@@ -1125,8 +1191,20 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
     const mode = this._config.unavailable_mode || "collapse";
     const availableItems = room.items.filter((item) => !isUnavailableState(this._hass.states[item.entity_id]));
     const unavailableItems = room.items.filter((item) => isUnavailableState(this._hass.states[item.entity_id]));
+    const managementItems = asArray(room.management_items).filter((item) => !isUnavailableState(this._hass.states[item.entity_id]));
     const availableTiles = availableItems.map((item) => this.tileHtml(item)).join("");
     const unavailableTiles = unavailableItems.map((item) => this.tileHtml(item)).join("");
+    const managementTiles = managementItems.map((item) => this.tileHtml(item)).join("");
+
+    const managementSection = managementItems.length
+      ? `<details class="advanced-section" ${this._advancedOpen ? "open" : ""}>
+          <summary tabindex="0">
+            <span>Lighting automation controls</span>
+            <span>${managementItems.length}</span>
+          </summary>
+          <div class="grid advanced-grid">${managementTiles}</div>
+        </details>`
+      : "";
 
     let unavailableSection = "";
     if (unavailableItems.length && mode === "show") {
@@ -1162,9 +1240,8 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           border: 1px solid color-mix(in srgb, var(--divider-color) 82%, transparent);
           box-shadow: 0 6px 20px color-mix(in srgb, #000 7%, transparent);
           overflow: hidden;
-          transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+          transition: none;
         }
-        .tile:hover { transform: translateY(-1px); }
         .tile.active {
           border-color: color-mix(in srgb, var(--primary-color) 58%, var(--divider-color));
           background: color-mix(in srgb, var(--primary-color) 11%, var(--card-background-color));
@@ -1256,12 +1333,12 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         .tile-actions {
           display: flex;
           align-items: center;
-          gap: 4px;
+          gap: 12px;
           margin-left: auto;
         }
         .more {
-          width: 44px;
-          height: 44px;
+          width: 52px;
+          height: 48px;
           flex: 0 0 auto;
           border: 0;
           border-radius: 12px;
@@ -1271,7 +1348,12 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           font-size: 1rem;
           font-weight: 700;
           letter-spacing: 1px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          touch-action: manipulation;
         }
+        .more ha-icon { --mdc-icon-size: 27px; }
         .more:hover { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
         .empty {
           max-width: 1440px;
@@ -1284,6 +1366,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           line-height: 1.5;
         }
         .section-divider,
+        .advanced-section,
         .unavailable-section {
           max-width: 1440px;
           margin: 24px auto 12px;
@@ -1307,10 +1390,12 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
         }
         .section-divider span:first-child { order: 2; }
         .section-divider span:last-child { order: 3; }
+        .advanced-section,
         .unavailable-section {
           border-top: 1px solid var(--divider-color);
           padding-top: 10px;
         }
+        .advanced-section summary,
         .unavailable-section summary {
           min-height: 44px;
           display: flex;
@@ -1324,8 +1409,9 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           font-weight: 700;
           list-style: none;
         }
+        .advanced-section summary::-webkit-details-marker,
         .unavailable-section summary::-webkit-details-marker { display: none; }
-        .unavailable-grid { margin-top: 10px; }
+        .advanced-grid, .unavailable-grid { margin-top: 10px; }
         @media (max-width: 600px) {
           .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
           .tile { min-height: 174px; border-radius: 18px; }
@@ -1340,7 +1426,9 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           .tile-name { font-size: 0.9375rem; line-height: 1.35; }
           .tile-state { font-size: 0.875rem; }
           .device-name { font-size: 0.875rem; }
-          .tile-footer { min-height: 46px; padding-left: 11px; }
+          .tile-footer { min-height: 52px; padding: 4px 6px 6px 11px; }
+          .tile-actions { gap: 12px; }
+          .more { width: 54px; height: 50px; }
           .metrics { font-size: 0.875rem; gap: 4px 7px; }
           .metrics span:nth-child(n+2) { display: none; }
         }
@@ -1353,6 +1441,7 @@ class HaRoomboardRoomCard extends RoomboardBaseCard {
           <div class="summary">${this.summaryHtml(room)}</div>
         </header>
         ${availableTiles ? `<main class="grid">${availableTiles}</main>` : `<div class="empty">No available everyday entities are currently active in this area.</div>`}
+        ${managementSection}
         ${unavailableSection}
       </div>`;
     this.bindEvents();
@@ -1407,7 +1496,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           </a>
           <div class="action-controls">
             <button class="automation-toggle" type="button" data-automation-toggle="${escapeHtml(item.entity_id)}" aria-pressed="${meta.enabled}" aria-label="${escapeHtml(meta.label)}: ${escapeHtml(item.name)}" title="${escapeHtml(meta.label)}"><ha-icon icon="${meta.icon}"></ha-icon></button>
-            <button class="action-more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-global-action="more" data-entity="${escapeHtml(item.entity_id)}">•••</button>
+            <button class="action-more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-global-action="more" data-entity="${escapeHtml(item.entity_id)}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button>
           </div>
         </article>`;
     }
@@ -1420,7 +1509,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
             <span>${escapeHtml(displayActionState(this._hass, item))}</span>
           </span>
         </button>
-        <button class="action-more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-global-action="more" data-entity="${escapeHtml(item.entity_id)}">•••</button>
+        <button class="action-more" type="button" aria-label="More information for ${escapeHtml(item.name)}" data-global-action="more" data-entity="${escapeHtml(item.entity_id)}"><ha-icon icon="mdi:dots-horizontal"></ha-icon></button>
       </article>`;
   }
 
@@ -1445,6 +1534,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
   bindOverviewEvents() {
     this.shadowRoot.querySelectorAll("button[data-global-action]").forEach((button) => {
       button.addEventListener("click", (event) => {
+        event.stopPropagation();
         const target = event.currentTarget;
         const entityId = target.dataset.entity;
         if (target.dataset.globalAction === "more") this.showMoreInfo(entityId);
@@ -1453,6 +1543,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
     });
     this.shadowRoot.querySelectorAll("button[data-automation-toggle]").forEach((button) => {
       button.addEventListener("click", (event) => {
+        event.stopPropagation();
         const entityId = event.currentTarget.dataset.automationToggle;
         this.toggleAutomationEnabled(entityId);
       });
@@ -1624,7 +1715,7 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
         .action-card {
           min-height: 104px;
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 48px;
+          grid-template-columns: minmax(0, 1fr) 60px;
           border-radius: 18px;
           overflow: hidden;
           background: var(--card-background-color);
@@ -1677,8 +1768,8 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           flex-direction: column;
           align-items: center;
           justify-content: flex-end;
-          gap: 2px;
-          padding: 4px 0 6px;
+          gap: 8px;
+          padding: 6px 4px 8px;
         }
         .action-controls .action-more {
           align-self: auto;
@@ -1686,8 +1777,8 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           margin-bottom: 0;
         }
         .action-more {
-          width: 44px;
-          min-height: 44px;
+          width: 52px;
+          min-height: 48px;
           align-self: end;
           justify-self: center;
           margin-bottom: 6px;
@@ -1698,7 +1789,12 @@ class HaRoomboardOverviewCard extends RoomboardBaseCard {
           cursor: pointer;
           font-size: 1rem;
           font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          touch-action: manipulation;
         }
+        .action-more ha-icon { --mdc-icon-size: 27px; }
         .action-more:hover { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
         @media (max-width: 600px) {
           .overview-grid { grid-template-columns: 1fr; gap: 9px; }
