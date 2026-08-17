@@ -10,6 +10,7 @@ All notable changes to HA Roomboard are documented here.
 - Publish a fresh semantic release from the default `main` branch with `ha-roomboard.js` attached as the release asset HACS expects.
 - Keep the dashboard implementation and 0.4.0 UX behaviour unchanged; this is a packaging/release recovery only.
 - Add `render_readme` to the HACS manifest to match conventional Dashboard repository metadata.
+- Make the release workflow create new tags from `main` and verify the `ha-roomboard.js` release asset before declaring success.
 
 ## 0.4.0 - 2026-08-17
 
