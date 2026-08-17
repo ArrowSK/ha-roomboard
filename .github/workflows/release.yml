@@ -62,11 +62,29 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
+          set -euo pipefail
+
+          retry() {
+            local attempt=1
+            local max_attempts=6
+            local delay=10
+            until "$@"; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Command failed after $max_attempts attempts."
+                return 1
+              fi
+              echo "GitHub release API attempt $attempt failed; retrying in ${delay}s..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "$TAG already exists; ensuring the HACS plugin asset is attached."
-            gh release upload "$TAG" dist/ha-roomboard.js --clobber
+            retry gh release upload "$TAG" dist/ha-roomboard.js --clobber
           else
-            gh release create "$TAG" \
+            retry gh release create "$TAG" \
               dist/ha-roomboard.js \
               --target "main" \
               --title "HA Roomboard $VERSION" \
@@ -79,4 +97,14 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         shell: bash
         run: |
-          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx 'ha-roomboard.js'
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx 'ha-roomboard.js'; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "ha-roomboard.js release asset was not verifiable after 6 attempts."
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
