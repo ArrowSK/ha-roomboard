@@ -4,6 +4,13 @@ All notable changes to HA Roomboard are documented here.
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-17
+
+- Repair HACS version detection after the initial 0.4.0 release packaging change.
+- Publish a fresh semantic release from the default `main` branch with `ha-roomboard.js` attached as the release asset HACS expects.
+- Keep the dashboard implementation and 0.4.0 UX behaviour unchanged; this is a packaging/release recovery only.
+- Add `render_readme` to the HACS manifest to match conventional Dashboard repository metadata.
+
 ## 0.4.0 - 2026-08-17
 
 - Remove the card lift/hover movement so tiles stay visually stable instead of trembling as states refresh or a pointer moves across them.

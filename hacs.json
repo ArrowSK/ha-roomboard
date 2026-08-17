@@ -1,5 +1,6 @@
 {
   "name": "HA Roomboard",
   "filename": "ha-roomboard.js",
-  "homeassistant": "2026.5.0"
+  "homeassistant": "2026.5.0",
+  "render_readme": true
 }

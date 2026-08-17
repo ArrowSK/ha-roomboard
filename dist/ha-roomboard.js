@@ -1,4 +1,4 @@
-const ROOMBOARD_VERSION = "0.4.0";
+const ROOMBOARD_VERSION = "0.4.1";
 const STRATEGY_TYPE = "ha-roomboard";
 const LIGHT_STRATEGY_TYPE = "ha-roomboard-light";
 const DARK_STRATEGY_TYPE = "ha-roomboard-dark";
