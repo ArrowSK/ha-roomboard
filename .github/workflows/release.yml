@@ -68,7 +68,7 @@ jobs:
           else
             gh release create "$TAG" \
               dist/ha-roomboard.js \
-              --target "$GITHUB_SHA" \
+              --target "main" \
               --title "HA Roomboard $VERSION" \
               --notes-file /tmp/release-notes.md
           fi
