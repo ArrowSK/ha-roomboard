@@ -8,6 +8,7 @@ on:
       - "dist/ha-roomboard.js"
       - "package.json"
       - "CHANGELOG.md"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -54,7 +55,7 @@ jobs:
           notes = match.group(1).strip() if match else f"HA Roomboard {version}"
           Path("/tmp/release-notes.md").write_text(notes + "\n", encoding="utf-8")
 
-      - name: Publish GitHub release
+      - name: Publish or repair GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -62,10 +63,20 @@ jobs:
         shell: bash
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "$TAG already exists; nothing to publish."
-            exit 0
+            echo "$TAG already exists; ensuring the HACS plugin asset is attached."
+            gh release upload "$TAG" dist/ha-roomboard.js --clobber
+          else
+            gh release create "$TAG" \
+              dist/ha-roomboard.js \
+              --target "$GITHUB_SHA" \
+              --title "HA Roomboard $VERSION" \
+              --notes-file /tmp/release-notes.md
           fi
-          gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "HA Roomboard $VERSION" \
-            --notes-file /tmp/release-notes.md
+
+      - name: Verify HACS release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx 'ha-roomboard.js'
